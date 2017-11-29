@@ -13,12 +13,12 @@ Quick Start
 	using namespace vcd;
 	
 	HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, utils::now());
-	VCDWriter writer{"dump.vcd"};
-	VarPtr counter_var = writer.register_var("a.b.c", "counter", VariableType::integer, 8, "00000000");
+	VCDWriter writer{"dump.vcd", head};
+	VarPtr counter_var = writer.register_var("a.b.c", "counter", VariableType::integer, 8);
 	for (int timestamp = 0; timestamp < 5; ++timestamp)
 	{
 		char value = 10 + timestamp * 2; 
-		writer.change(counter_var, timestamp, util::format("%b", value));
+		writer.change(counter_var, timestamp, utils::format("%b", value));
 	}
 ```
 Output:
