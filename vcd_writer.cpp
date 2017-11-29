@@ -55,7 +55,7 @@ const std::string VCDHeader::kw_names[VCDHeader::kws] = { "$timescale", "$date",
 void VCDHeaderDeleter::operator()(VCDHeader *p) { delete p; }
 
 // -----------------------------
-VCDWriter::VCDWriter(const std::string &filename, HeadPtr &&header, unsigned init_timestamp) throw(...) :
+VCDWriter::VCDWriter(const std::string &filename, HeadPtr &&header, unsigned init_timestamp) :
     _filename(filename),
     _timestamp(init_timestamp),
     _header((header) ? std::move(header) : makeVCDHeader()),
@@ -107,13 +107,13 @@ protected:
     ScopePtr    _scope;  // pointer to scope string
 
     //! string representation of variable types
-    static const std::string VCDVariable::VAR_TYPES[];
+    static const std::string VAR_TYPES[];
 
 public:
     //! string representation of variable declartion in VCD
     std::string declartion() const;
     //! string representation of value change record in VCD
-    virtual VarValue change_record(const VarValue &value) const throw(...) = 0;
+    virtual VarValue change_record(const VarValue &value) const = 0;
 
     friend class VCDWriter;
     friend struct VarPtrHash;
@@ -141,7 +141,7 @@ struct VCDScalarVariable : public VCDVariable
     VCDScalarVariable(const std::string &name, VariableType type, unsigned size, ScopePtr scope, unsigned next_var_id) :
         VCDVariable(name, type, size, scope, next_var_id)
     {}
-    VarValue change_record(const VarValue &value) const throw(...)
+    VarValue change_record(const VarValue &value) const
     {
         char c = (value.size()) ? tolower(value[0]) : VCDValues::UNDEF;
         if (value.size() != 1 || (c != VCDValues::ONE   && c != VCDValues::ZERO
@@ -159,11 +159,11 @@ struct VCDStringVariable : public VCDVariable
     VCDStringVariable(const std::string &name, VariableType type, unsigned size, ScopePtr scope, unsigned next_var_id) :
         VCDVariable(name, type, size, scope, next_var_id)
     {}
-    VarValue change_record(const VarValue &value) const throw(...)
+    VarValue change_record(const VarValue &value) const
     {
         if (value.find(' ') != std::string::npos)
             throw VCDTypeException{ format("Invalid string value '%s'", value.c_str()) };
-        return format("s%s ", value);
+        return format("s%s ", value.c_str());
     }
 };
 
@@ -174,7 +174,7 @@ struct VCDRealVariable : public VCDVariable
 {
     VCDRealVariable(const std::string &name, VariableType type, unsigned size, ScopePtr scope, unsigned next_var_id) :
         VCDVariable(name, type, size, scope, next_var_id) {}
-    std::string change_record(const VarValue &value) const throw(...)
+    std::string change_record(const VarValue &value) const
     { return format("r%.16g ", stod(value)); }
 };
 
@@ -185,7 +185,7 @@ struct VCDVectorVariable : public VCDVariable
 {
     VCDVectorVariable(const std::string &name, VariableType type, unsigned size, ScopePtr scope, unsigned next_var_id) :
         VCDVariable(name, type, size, scope, next_var_id) {}
-    std::string change_record(const VarValue &value) const throw(...);
+    std::string change_record(const VarValue &value) const;
 };
 
 // -----------------------------
@@ -241,7 +241,7 @@ VarPtr VCDWriter::register_var(const std::string &scope, const std::string &name
         default:
             if (!size)
                 throw VCDTypeException{ format("Must supply size for type '%s' of var '%s'",
-                                               VCDVariable::VAR_TYPES[(int)type].c_str(), name) };
+                                               VCDVariable::VAR_TYPES[(int)type].c_str(), name.c_str()) };
 
             pvar = VarPtr(new VCDVectorVariable(name, type, size, *cur_scope, _next_var_id));
             if (init_value.size() == 1 && init_value[0] == VCDValues::UNDEF)
@@ -262,7 +262,7 @@ VarPtr VCDWriter::register_var(const std::string &scope, const std::string &name
 }
 
 // -----------------------------
-bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, bool reg) throw(...)
+bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, bool reg)
 {
     if (timestamp < _timestamp)
         throw VCDPhaseException{ format("Out of order value change var '%s'", var->_name.c_str()) };
@@ -300,7 +300,7 @@ bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, 
 }
 
 // -----------------------------
-bool VCDWriter::change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value) throw(...)
+bool VCDWriter::change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value)
 {
     ScopePtr pscope = std::make_shared<VCDScope>(scope, _scope_def_type);
     auto its = _scopes.find(pscope);
@@ -324,7 +324,7 @@ VarPtr VCDWriter::var(const std::string &scope, const std::string &name) const
     return (itv != _vars.end()) ? *itv : VarPtr{};
 }
 
-void VCDWriter::set_scope_type(std::string& scope, ScopeType scope_type) throw(...)
+void VCDWriter::set_scope_type(std::string& scope, ScopeType scope_type)
 {
     ScopePtr pscope = std::make_shared<VCDScope>(scope, _scope_def_type);
     auto it = _scopes.find(pscope);
@@ -403,7 +403,7 @@ void VCDWriter::_write_header()
             n = scope_prev.find(_scope_sep);
             n = (n == std::string::npos) ? scope_prev.size() : n;
             // equal prefix
-            while (strncmp(scope.c_str(), scope_prev.c_str(), n - _scope_sep.size()) == 0)
+            while (std::strncmp(scope.c_str(), scope_prev.c_str(), n - _scope_sep.size()) == 0)
             {
                 n_prev = n + _scope_sep.size();
                 n = scope_prev.find(_scope_sep, n_prev);
@@ -487,7 +487,7 @@ std::string VCDVariable::declartion() const
 // -----------------------------
 //  :Warning: *value* is string where all characters must be one of `VCDValues`.
 //  An empty  *value* is the same as `VCDValues::UNDEF`
-VarValue VCDVectorVariable::change_record(const VarValue &value) const throw(...)
+VarValue VCDVectorVariable::change_record(const VarValue &value) const
 {
     std::string val(value);
     auto val_sz = value.size();

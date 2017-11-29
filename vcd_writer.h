@@ -117,7 +117,7 @@ class VCDWriter
     unsigned   _next_var_id;
 
 public:
-    VCDWriter(const std::string &filename, HeadPtr &&header = {}, unsigned init_timestamp = 0u) throw(...);
+    VCDWriter(const std::string &filename, HeadPtr &&header = {}, unsigned init_timestamp = 0u);
 
     ~VCDWriter()
     {
@@ -141,10 +141,10 @@ public:
     // but never call with a past *timestamp*
     // Return:  *true* if new_value is dumped into VCD file,
     //         *false* if new_value is not changed from priveios *timestamp* for a given var
-    bool change(VarPtr var, TimeStamp timestamp, const VarValue &value) throw(...)
+    bool change(VarPtr var, TimeStamp timestamp, const VarValue &value)
     { return _change(var, timestamp, value, false); }
 
-    bool change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value) throw(...);
+    bool change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value);
 
     // Suspend dumping to VCD file
     void dump_off(TimeStamp current)
@@ -165,7 +165,7 @@ public:
     // Flush any buffered VCD data to output file.
     // If the VCD header has not already been written, calling `flush()` will force
     // the header to be written thus disallowing any further variable registrations.
-    void flush(const TimeStamp *current = NULL) throw(...)
+    void flush(const TimeStamp *current = NULL)
     {
         if (_closed)
             throw VCDPhaseException{ "Cannot flush() after close()" };
@@ -186,7 +186,7 @@ public:
     }
 
     //! VCD viewer applications may display different scope types differently
-    void set_scope_type(std::string& scope, ScopeType) throw(...);
+    void set_scope_type(std::string& scope, ScopeType);
 
     void set_scope_default_type(ScopeType new_type)
     { _scope_def_type = new_type; }
@@ -203,7 +203,7 @@ public:
     static const VariableType var_def_type = VariableType::wire;
 
 protected:
-    bool _change(VarPtr, TimeStamp, const VarValue&, bool) throw(...);
+    bool _change(VarPtr, TimeStamp, const VarValue&, bool);
     void _dump_off(TimeStamp);
     void _dump_values(const std::string& keyword);
     void _scope_declaration(const std::string& scope, size_t sub_beg, size_t sub_end = std::string::npos);
