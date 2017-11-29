@@ -8,7 +8,7 @@ It writes Value Change Dump (VCD) files as specified in IEEE 1364-2005.
 
 Quick Start
 -----------
-
+```C++
 	#include "vcd_writer.h"
 	using namespace vcd;
 	
@@ -20,7 +20,8 @@ Quick Start
 		char value = 10 + timestamp * 2; 
 		writer.change(counter_var, timestamp, util::format("%b", value));
 	}
-
+```
+Output:
 
 	$date 2017-11-29 13:14:25 $end
 	$timescale 1 ns $end
