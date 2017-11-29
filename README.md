@@ -1,7 +1,8 @@
 # vcd-writer
 
 Port PyVCD package from python to C++ PyVCD lib
-Visit `PyVCD on GitHub <https://github.com/SanDisk-Open-Source/pyvcd>`
+
+Visit `PyVCD on GitHub <https://github.com/SanDisk-Open-Source/pyvcd>`_.
 
 It writes Value Change Dump (VCD) files as specified in IEEE 1364-2005.
 
@@ -19,8 +20,7 @@ Quick Start
    >>> {
    >>>	   char value = 10 + timestamp * 2; 
    >>>     writer.change(counter_var, timestamp, util::format("%b", value));
-   >>> }
-   
+   >>> }   
    $date 2017-11-29 13:14:25 $end
    $timescale 1 ns $end
    $scope module a $end
