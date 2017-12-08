@@ -78,6 +78,10 @@ struct VarPtrEqual
 { bool operator()(const VarPtr &a, const VarPtr &b) const; };
 
 // -----------------------------
+struct VarSearch;
+using VarSearchPtr = std::shared_ptr<VarSearch>;
+
+// -----------------------------
 struct VCDHeader;
 struct VCDHeaderDeleter { void operator()(VCDHeader *p); };
 using HeadPtr = std::unique_ptr<VCDHeader, VCDHeaderDeleter>;
@@ -115,6 +119,7 @@ class VCDWriter
     bool _registering;
     // gen var idents (internal names)
     unsigned   _next_var_id;
+    VarSearchPtr _search;
 
 public:
     VCDWriter(const std::string &filename, HeadPtr &&header = {}, unsigned init_timestamp = 0u);
