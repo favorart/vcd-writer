@@ -126,8 +126,8 @@ public:
 
     ~VCDWriter()
     {
-        flush(NULL);
-        fclose(_ofile);
+        flush();
+        fclose(this->_ofile);
     }
 
     // Register a VCD variable and return its mark to change value further.

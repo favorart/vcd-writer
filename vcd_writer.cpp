@@ -172,17 +172,13 @@ struct VCDVectorVariable : public VCDVariable
 // -----------------------------
 struct VarSearch
 {
-    VCDScope vcd_scope;
-    ScopePtr ptr_scope;
-    VCDScalarVariable vcd_var;
-    VarPtr ptr_var;
+    VCDScope vcd_scope = { "", ScopeType::module };
+    ScopePtr ptr_scope = { &vcd_scope, [](VCDScope*) {} };
+    VCDScalarVariable vcd_var = { "", VCDWriter::var_def_type, 0, ptr_scope, 0 };
+    VarPtr ptr_var = { &vcd_var, [](VCDScalarVariable*) {} };
 
-    VarSearch(ScopeType scope_def_type) :
-        ptr_scope(&vcd_scope),
-        ptr_var(&vcd_var),
-        vcd_scope("", scope_def_type),
-        vcd_var("", VCDWriter::var_def_type, 0, ptr_scope, 0)
-    {}
+    VarSearch() = delete;
+    VarSearch(ScopeType scope_def_type) : vcd_scope("", scope_def_type) {}
 };
 
 // -----------------------------
@@ -330,6 +326,7 @@ VarPtr VCDWriter::var(const std::string &scope, const std::string &name) const
     //if (it_scope == _scopes.end())
     //    throw VCDPhaseException{ format("Such scope '%s' does not exist", scope.c_str()) };
     //VarPtr pvar = std::make_shared<VCDScalarVariable>(name, VCDWriter::var_def_type, 0, *it_scope, 0);
+    //auto it_var = _vars.find(pvar);
     _search->vcd_scope.name = scope;
     _search->vcd_var._name = name;
     auto it_var = _vars.find(_search->ptr_var);
