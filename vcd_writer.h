@@ -10,7 +10,9 @@
 #include <list>
 #include <set>
 #include <map>
-
+#ifdef _MSC_VER
+#pragma warning (disable : 4996)
+#endif
 
 namespace vcd {
 namespace utils {
@@ -122,7 +124,7 @@ class VCDWriter
     VarSearchPtr _search;
 
 public:
-    VCDWriter(const std::string &filename, HeadPtr &&header = {}, unsigned init_timestamp = 0u);
+    VCDWriter(const std::string &filename, HeadPtr &header, unsigned init_timestamp = 0u);
 
     ~VCDWriter()
     {

@@ -1,4 +1,5 @@
 #include <string>
+#include <cstdlib>
 #include <cstring>
 #include <cassert>
 #include <sstream>
@@ -6,16 +7,15 @@
 #include "vcd_writer.h"
 
 
-namespace vcd {
-
 // -----------------------------
+namespace vcd {
 namespace utils {
 void replace_new_lines(std::string &str, const std::string &sub);
 }
 using namespace utils;
 
 // -----------------------------
-struct VCDHeader
+struct VCDHeader final
 {
     static const unsigned kws = 4;
     static const std::string kw_names[kws];
@@ -47,7 +47,9 @@ struct VCDHeader
 // -----------------------------
 HeadPtr makeVCDHeader(TimeScale timescale_quan, TimeScaleUnit timescale_unit, const std::string &date,
                       const std::string &comment, const std::string &version)
-{ return HeadPtr{ new VCDHeader(timescale_quan, timescale_unit, date, comment, version) }; }
+{
+    return HeadPtr{ new VCDHeader(timescale_quan, timescale_unit, date, comment, version) };
+}
 
 // -----------------------------
 const std::string VCDHeader::kw_names[VCDHeader::kws] = { "$timescale", "$date", "$comment", "$version" };
@@ -56,7 +58,7 @@ const std::string VCDHeader::kw_names[VCDHeader::kws] = { "$timescale", "$date",
 void VCDHeaderDeleter::operator()(VCDHeader *p) { delete p; }
 
 // -----------------------------
-struct VCDScope
+struct VCDScope final
 {
     std::string name;
     ScopeType   type;
@@ -68,7 +70,9 @@ struct VCDScope
 
 // -----------------------------
 bool ScopePtrHash::operator()(const ScopePtr &l, const ScopePtr &r) const
-{ return (l->name < r->name); }
+{
+    return (l->name < r->name);
+}
 
 // -----------------------------
 // VCD variable details needed to call :meth:`VCDWriter.change()`.
@@ -102,17 +106,23 @@ public:
 };
 
 // -----------------------------
-const std::string VCDVariable::VAR_TYPES[] = { "wire", "reg", "string", "parameter", "integer", "real", "realtime", "time", "event",
-                                               "supply0", "supply1", "tri", "triand", "trior", "trireg", "tri0", "tri1", "wand", "wor" };
+const std::string VCDVariable::VAR_TYPES[] = { 
+    "wire", "reg", "string", "parameter", "integer", "real", "realtime", "time", "event",
+    "supply0", "supply1", "tri", "triand", "trior", "trireg", "tri0", "tri1", "wand", "wor"
+};
 
 // -----------------------------
 size_t VarPtrHash::operator()(const VarPtr &p) const
-{ 
+{
     std::hash<std::string> h;
     return (h(p->_name) ^ (h(p->_scope->name) << 1));
 }
+
+// -----------------------------
 bool VarPtrEqual::operator()(const VarPtr &a, const VarPtr &b) const
-{ return (a->_name == b->_name) && (a->_scope->name == b->_scope->name); }
+{
+    return (a->_name == b->_name) && (a->_scope->name == b->_scope->name);
+}
 
 // -----------------------------
 // One-bit VCD scalar is a 4-state variable and thus may have one of
@@ -182,7 +192,7 @@ struct VarSearch
 };
 
 // -----------------------------
-VCDWriter::VCDWriter(const std::string &filename, HeadPtr &&header, unsigned init_timestamp) :
+VCDWriter::VCDWriter(const std::string &filename, HeadPtr &header, unsigned init_timestamp) :
     _filename(filename),
     _timestamp(init_timestamp),
     _header((header) ? std::move(header) : makeVCDHeader()),
@@ -197,7 +207,7 @@ VCDWriter::VCDWriter(const std::string &filename, HeadPtr &&header, unsigned ini
     if (!_header)
         throw VCDTypeException{ "Invalid pointer to header" };
 
-    _ofile = fopen(_filename.c_str(), "w");
+    _ofile = std::fopen(_filename.c_str(), "w");
     if (!_ofile)
         throw VCDTypeException{ format("Can't open file '%s' for writing", _filename.c_str()) };
 }
@@ -286,19 +296,6 @@ bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, 
     if (!var)
         throw VCDTypeException{ "Invalid VCDVariable" };
 
-    std::string change_value = var->change_record(value);
-    // if value changed
-    if (_vars_prevs.find(var) != _vars_prevs.end())
-    {
-        if (_vars_prevs[var] == change_value) return false;
-        _vars_prevs[var] = change_value;
-    }
-    else
-        if (!reg)
-            throw VCDTypeException{ format("VCDVariable '%s' do not registered", var->_name.c_str()) };
-        else
-            _vars_prevs.insert(std::make_pair(var, change_value));
-
     if (timestamp > _timestamp)
     {
         if (_registering)
@@ -306,6 +303,23 @@ bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, 
         if (_dumping)
             fprintf(_ofile, "#%d\n", timestamp);
         _timestamp = timestamp;
+    }
+
+    std::string change_value = var->change_record(value);
+    // if value changed
+    auto it = _vars_prevs.find(var);
+    if (it != _vars_prevs.end())
+    {
+        if (it->second == change_value)
+            return false;
+        it->second = change_value;
+    }
+    else
+    {
+        if (!reg)
+            throw VCDTypeException{ format("VCDVariable '%s' do not registered", var->_name.c_str()) };
+        else
+            _vars_prevs.insert(std::make_pair(var, change_value));
     }
     // dump it into file
     if (_dumping && !_registering)
@@ -315,7 +329,9 @@ bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, 
 
 // -----------------------------
 bool VCDWriter::change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value)
-{ return _change(var(scope, name), timestamp, value, false); }
+{
+    return _change(var(scope, name), timestamp, value, false);
+}
 
 // -----------------------------
 VarPtr VCDWriter::var(const std::string &scope, const std::string &name) const
@@ -335,6 +351,7 @@ VarPtr VCDWriter::var(const std::string &scope, const std::string &name) const
     return *it_var;
 }
 
+// -----------------------------
 void VCDWriter::set_scope_type(std::string &scope, ScopeType scope_type)
 {
     ScopePtr pscope = std::make_shared<VCDScope>(scope, _scope_def_type);
@@ -367,6 +384,7 @@ void VCDWriter::_dump_off(TimeStamp timestamp)
     fprintf(_ofile, "$end\n");
 }
 
+// -----------------------------
 void VCDWriter::_dump_values(const std::string &keyword)
 {
     fprintf(_ofile, (keyword + "\n").c_str());
@@ -380,6 +398,7 @@ void VCDWriter::_dump_values(const std::string &keyword)
     fprintf(_ofile, "$end\n");
 }
 
+// -----------------------------
 void VCDWriter::_scope_declaration(const std::string &scope, size_t sub_beg, size_t sub_end)
 {
     const std::string SCOPE_TYPES[] = { "begin", "fork", "function", "module", "task" };
@@ -389,6 +408,7 @@ void VCDWriter::_scope_declaration(const std::string &scope, size_t sub_beg, siz
     fprintf(_ofile, "$scope %s %s $end\n", scope_type, scope_name.c_str());
 }
 
+// -----------------------------
 void VCDWriter::_write_header()
 {
     for (int i = 0; i < VCDHeader::kws; ++i)
@@ -469,6 +489,7 @@ void VCDWriter::_write_header()
     _header.reset(nullptr);
 }
 
+// -----------------------------
 void VCDWriter::_finalize_registration()
 {
     assert(_registering);
@@ -492,8 +513,11 @@ VCDVariable::VCDVariable(const std::string &name, VariableType type, unsigned si
     _ident = ss.str();
 }
 
+// -----------------------------
 std::string VCDVariable::declartion() const
-{ return format("$var %s %d %s %s $end", VAR_TYPES[int(_type)].c_str(), _size, _ident.c_str(), _name.c_str()); }
+{
+    return format("$var %s %d %s %s $end", VAR_TYPES[int(_type)].c_str(), _size, _ident.c_str(), _name.c_str());
+}
 
 // -----------------------------
 //  :Warning: *value* is string where all characters must be one of `VCDValues`.
@@ -519,7 +543,7 @@ VarValue VCDVectorVariable::change_record(const VarValue &value) const
     // align
     else if (val_sz < _size)
     {
-        val.reserve(_size + 2);
+        val.resize(_size + 2);
         auto k = (_size - (val_sz - 1));
         for (auto i = (val_sz - 1); i >= 1; --i)
             val[k + i] = val[i];
@@ -529,4 +553,6 @@ VarValue VCDVectorVariable::change_record(const VarValue &value) const
     return val;
 }
 
-}
+// -----------------------------
+} //end namespace vcd
+

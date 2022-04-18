@@ -2,6 +2,10 @@
 #include <string>
 #include <vector>
 #include <ctime>
+#ifdef _MSC_VER
+#pragma warning (disable : 4996)
+#endif
+
 
 
 namespace vcd {
@@ -17,7 +21,7 @@ std::string format(const char *fmt, ...)
         va_list args2;
         va_copy(args2, args);
         int res = vsnprintf(v.data(), v.size(), fmt, args2);
-        if ((res >= 0) && (res < static_cast<int>(v.size())))
+        if (res >= 0 && res < static_cast<int>(v.size()))
         {
             va_end(args);
             va_end(args2);
@@ -37,13 +41,12 @@ std::string format(const char *fmt, ...)
 // -----------------------------
 std::string now()
 {
-    time_t rawtime;
+    std::time_t rawtime;
     struct tm *timeinfo;
     char buffer[80];
-
-    time(&rawtime);
-    timeinfo = localtime(&rawtime);
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
+    std::time(&rawtime);
+    timeinfo = std::localtime(&rawtime);
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
     return { buffer };
 }
 
