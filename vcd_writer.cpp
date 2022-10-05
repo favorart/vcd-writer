@@ -387,7 +387,7 @@ void VCDWriter::_dump_off(TimeStamp timestamp)
 // -----------------------------
 void VCDWriter::_dump_values(const std::string &keyword)
 {
-    fprintf(_ofile, (keyword + "\n").c_str());
+    fprintf(_ofile, "%s", (keyword + "\n").c_str());
     // TODO : events should be excluded
     for (const auto &p : _vars_prevs)
     {
