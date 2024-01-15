@@ -387,7 +387,7 @@ void VCDWriter::_dump_off(TimeStamp timestamp)
 // -----------------------------
 void VCDWriter::_dump_values(const std::string &keyword)
 {
-    fprintf(_ofile, (keyword + "\n").c_str());
+    fprintf(_ofile, "%s", (keyword + "\n").c_str());
     // TODO : events should be excluded
     for (const auto &p : _vars_prevs)
     {
@@ -543,12 +543,34 @@ VarValue VCDVectorVariable::change_record(const VarValue &value) const
     // align
     else if (val_sz < _size)
     {
-        val.resize(_size + 2);
-        auto k = (_size - (val_sz - 1));
-        for (auto i = (val_sz - 1); i >= 1; --i)
+        /***
+         * Example: _size = 4, a 4 bit vector
+         * value is 'xx' => val_sz = 2
+         * then val is 'bxx ' when entering here, but this is not yet alligned
+         * end result should look like 'b00xx '
+         * so 'xx' needs to be aligned to the right
+         * 'b|x|x| |'       val
+         * 'b|0|0|x|x| |'   val desired
+         * |0|1|2|3|4|5|    index positions
+         */
+
+        val.resize(_size + 2); // to allow full bit chars + 'b' in beginning and a space ' ' at the end
+        auto k = _size - val_sz;
+        /***
+        * k: amount that original 'value' input in val (here 'xx') need to shifted
+        * or in other words: number of zeros that need to be filled in before 'xx'
+        * k is then size(4) - val_sz (2) = 2,
+        * as seen in example first 'x' need to be moved from pos 1 -> 3, second from 2 -> 4
+        * reverse through the 'xx' string, as otherwise chars might be moved to positions that need to be moved aswell
+        * start at val_sz(2) and go back, ending before hitting the 'b'
+        */
+        for (auto i = val_sz ; i >= 1; --i)
             val[k + i] = val[i];
+        // set remaining values zero
         for (auto i = 1u; i <= k; ++i)
             val[i] = VCDValues::ZERO;
+        // set last char to a space
+        val[_size+1] = ' ';
     }
     return val;
 }
