@@ -53,12 +53,17 @@ clean:
 	@$(RM) -r $(BUILD_PATH)
 
 .PHONY: all
-all: $(BUILD_PATH)/libvcdwriter.so
+all: $(BUILD_PATH)/libvcdwriter.so $(BUILD_PATH)/test
 
 # Creation of the shared library
 $(BUILD_PATH)/libvcdwriter.so: $(OBJECTS)
 	@echo "Building shared library: $@"
 	${CXX} $(CXXFLAGS) $(INCLUDES) -shared -o $@ $^
+
+# Creation of the test
+$(BUILD_PATH)/test: $(OBJECTS)
+	@echo "Building exe file: $@"
+	${CXX} $(CXXFLAGS) main.cpp $(INCLUDES) -o $@ $^
 
 # Add dependency files, if they exist
 -include $(DEPS)

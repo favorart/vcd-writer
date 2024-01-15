@@ -5,7 +5,7 @@ using namespace vcd;
 
 int main()
 {
-    HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, utils::now());
+    HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2024-01-15 19:16:21");
     std::string filename = "dump.vcd";
     VCDWriter writer(filename, head);
     VarPtr counter_var = writer.register_var("a.b.c", "counter", VariableType::integer, 8);
