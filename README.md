@@ -10,10 +10,17 @@ It writes Value Change Dump (VCD) files as specified in IEEE 1364-2005.
 ## Install
 
 ```
+# install gtests (ubuntu)
+sudo apt-get install libgtest-dev
+
 # compile library and tests
 make
+
 # run simple test
 ./test/main
+
+# run unit tests
+./test/test
 ```
 
 

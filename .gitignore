@@ -1,6 +1,23 @@
 # Prerequisites
 *.d
 
+# MS VS build files
+*.vsidx
+*.db
+*.pdb
+*.ilk
+*.suo
+*.p7s
+*.ipch
+*.tlog
+*.nupkg
+*.recipe
+*.config
+*.opendb
+*.db-wal
+*.db-shm
+*.CopyComplete
+
 # Compiled Object files
 *.slo
 *.lo

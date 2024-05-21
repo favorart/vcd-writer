@@ -13,9 +13,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - uses: Bacondish2023/setup-googletest@v1
+      with:
+        tag: v1.14.0
+
     - name: make
       run: make
     - name: build complete
-      run: pushd build && [ -f "libvcdwriter.so" ] && [ -f "libvcdwriter.a" ] && [ -f "main" ]
+      run: pushd build && [ -f "libvcdwriter.so" ] && [ -f "libvcdwriter.a" ] && [ -f "main" ] && [ -f "test" ]
     - name: single test
       run: ./build/main   &&   diff  compare.vcd  dump.vcd
+    - name: unit tests
+      run: ./build/test

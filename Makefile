@@ -30,6 +30,7 @@ DEPS = $(OBJECTS:.o=.d)
 
 # flags #
 COMPILE_FLAGS = -std=c++17 -Wall -Wextra -g -w -fPIC
+LDFLAGS = -lgtest -lpthread
 INCLUDES = -I include/ -I /usr/local/include
 # Space-separated pkg-config libraries used by this project
 LIBS =
@@ -51,10 +52,11 @@ dirs:
 clean:
 	@echo "Deleting directories"
 	@$(RM) -r $(BUILD_PATH)
+	@$(RM) test.vcd
 	@$(RM) dump.vcd
 
 .PHONY: all
-all:  $(BUILD_PATH)/libvcdwriter.so  $(BUILD_PATH)/libvcdwriter.a  $(BUILD_PATH)/main
+all:  $(BUILD_PATH)/libvcdwriter.so  $(BUILD_PATH)/libvcdwriter.a  $(BUILD_PATH)/main  $(BUILD_PATH)/test
 
 # Creation of the shared library
 $(BUILD_PATH)/libvcdwriter.so: $(OBJECTS)
@@ -70,6 +72,11 @@ $(BUILD_PATH)/libvcdwriter.a: $(OBJECTS)
 $(BUILD_PATH)/main: $(OBJECTS)
 	@echo "Building exe file for simple test: $@"
 	${CXX} $(CXXFLAGS) test/main.cpp $(INCLUDES) -o $@ $^
+
+# Creation of the uint test
+$(BUILD_PATH)/test: $(OBJECTS)
+	@echo "Building exe file for unit tests: $@"
+	${CXX} $(CXXFLAGS) test/vcd_tests.cpp $(INCLUDES) -o $@ $^  $(LDFLAGS)
 
 # Add dependency files, if they exist
 -include $(DEPS)
