@@ -6,12 +6,23 @@ Visit [PyVCD on GitHub](https://github.com/SanDisk-Open-Source/pyvcd/).
 
 It writes Value Change Dump (VCD) files as specified in IEEE 1364-2005.
 
-Quick Start
------------
+
+## Install
+
+```
+# compile library and tests
+make
+# run simple test
+./test/main
+```
+
+
+## Quick Start
+
 ```C++
 	#include "vcd_writer.h"
 	using namespace vcd;
-	
+
 	HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, utils::now());
 	std::string filename = "dump.vcd";
 	VCDWriter writer(filename, head);
@@ -19,13 +30,14 @@ Quick Start
 	VarPtr var_var = writer.register_var("a.b", "var", VariableType::integer, 8);
 	for (int timestamp = 0; timestamp < 5; ++timestamp)
 	{
-	    const int c_val = 10 + timestamp * 2;
-	    const int v_val = 11 + timestamp * 2;
-	    writer.change(counter_var, timestamp, std::bitset<8>(c_val).to_string());
-	    writer.change(var_var, timestamp, std::bitset<8>(v_val).to_string());
+		const int c_val = 10 + timestamp * 2;
+		const int v_val = 11 + timestamp * 2;
+		writer.change(counter_var, timestamp, std::bitset<8>(c_val).to_string());
+		writer.change(var_var, timestamp, std::bitset<8>(v_val).to_string());
 	}
 ```
-Output:
+
+**Output:**
 
 	$timescale 1 ns $end
 	$date 2022-04-18 11:12:38 $end

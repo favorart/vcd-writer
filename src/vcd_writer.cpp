@@ -336,13 +336,7 @@ bool VCDWriter::change(const std::string &scope, const std::string &name, TimeSt
 // -----------------------------
 VarPtr VCDWriter::var(const std::string &scope, const std::string &name) const
 {
-    //!!! speed optimisation !!!
-    //ScopePtr pscope = std::make_shared<VCDScope>(scope, _scope_def_type);
-    //auto it_scope = _scopes.find(pscope);
-    //if (it_scope == _scopes.end())
-    //    throw VCDPhaseException{ format("Such scope '%s' does not exist", scope.c_str()) };
-    //VarPtr pvar = std::make_shared<VCDScalarVariable>(name, VCDWriter::var_def_type, 0, *it_scope, 0);
-    //auto it_var = _vars.find(pvar);
+    // The _search is a speed optimisation
     _search->vcd_scope.name = scope;
     _search->vcd_var._name = name;
     auto it_var = _vars.find(_search->ptr_var);
@@ -354,8 +348,9 @@ VarPtr VCDWriter::var(const std::string &scope, const std::string &name) const
 // -----------------------------
 void VCDWriter::set_scope_type(std::string &scope, ScopeType scope_type)
 {
-    ScopePtr pscope = std::make_shared<VCDScope>(scope, _scope_def_type);
-    auto it = _scopes.find(pscope);
+    // The _search is a speed optimisation
+    _search->vcd_scope.name = scope;
+    auto it = _scopes.find(_search->ptr_scope);
     if (it == _scopes.end())
         throw VCDPhaseException{ utils::format("Such scope '%s' does not exist", scope.c_str()) };
     (**it).type = scope_type;
@@ -399,12 +394,12 @@ void VCDWriter::_dump_values(const std::string &keyword)
 }
 
 // -----------------------------
-void VCDWriter::_scope_declaration(const std::string &scope, size_t sub_beg, size_t sub_end)
+void VCDWriter::_scope_declaration(const std::string &scope, ScopeType type, size_t sub_beg, size_t sub_end)
 {
     const std::string SCOPE_TYPES[] = { "begin", "fork", "function", "module", "task" };
 
     auto scope_name = scope.substr(sub_beg, sub_end - sub_beg);
-    auto scope_type = SCOPE_TYPES[int(_scope_def_type)].c_str();
+    auto scope_type = SCOPE_TYPES[int(type)].c_str();
     fprintf(_ofile, "$scope %s %s $end\n", scope_type, scope_name.c_str());
 }
 
@@ -457,12 +452,12 @@ void VCDWriter::_write_header()
         n = scope.find(_scope_sep, n_prev);
         while (n != std::string::npos)
         {
-            _scope_declaration(scope, n_prev, n);
+            _scope_declaration(scope, s->type, n_prev, n);
             n_prev = n + _scope_sep.size();
             n = scope.find(_scope_sep, n_prev);
         }
         // last
-        _scope_declaration(scope, n_prev);
+        _scope_declaration(scope, s->type, n_prev);
 
         // dump variable declartion
         for (const auto& var : s->vars)

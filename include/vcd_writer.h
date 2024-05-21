@@ -125,12 +125,10 @@ class VCDWriter
 
 public:
     VCDWriter(const std::string &filename, HeadPtr &header, unsigned init_timestamp = 0u);
+    VCDWriter(VCDWriter&&) = delete;
+    VCDWriter(const VCDWriter&) = delete;
 
-    ~VCDWriter()
-    {
-        flush();
-        fclose(this->_ofile);
-    }
+    virtual ~VCDWriter() { close(); fclose(this->_ofile); }
 
     // Register a VCD variable and return its mark to change value further.
     // Remember, all VCD variables must be registered prior to any value changes.
@@ -187,7 +185,8 @@ public:
     // Note, the output file-stream will be closed in destructor of `VCDWriter`
     void close(const TimeStamp *final = NULL)
     {
-        if (_closed) return;
+        if (_closed)
+            return;
         flush(final);
         _closed = true;
     }
@@ -207,13 +206,13 @@ public:
     //! get VCD Variable (if it is registered var() != NULL)
     VarPtr var(const std::string &scope, const std::string &name) const;
 
-    static const VariableType var_def_type = VariableType::wire;
+    static const VariableType var_def_type = VariableType::integer;
 
 protected:
     bool _change(VarPtr, TimeStamp, const VarValue&, bool);
     void _dump_off(TimeStamp);
     void _dump_values(const std::string& keyword);
-    void _scope_declaration(const std::string& scope, size_t sub_beg, size_t sub_end = std::string::npos);
+    void _scope_declaration(const std::string& scope, ScopeType type, size_t sub_beg, size_t sub_end = std::string::npos);
     //! Dump VCD header into file
     void _write_header();
     //! Turn to dumping phase, no more variables regestration allowed
