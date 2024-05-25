@@ -73,7 +73,7 @@ $(BUILD_PATH)/main: $(OBJECTS)
 	@echo "Building exe file for simple test: $@"
 	${CXX} $(CXXFLAGS) test/main.cpp $(INCLUDES) -o $@ $^
 
-# Creation of the uint test
+# Creation of the unit tests
 $(BUILD_PATH)/test: $(OBJECTS)
 	@echo "Building exe file for unit tests: $@"
 	${CXX} $(CXXFLAGS) test/vcd_tests.cpp $(INCLUDES) -o $@ $^  $(LDFLAGS)

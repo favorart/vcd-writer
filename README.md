@@ -23,6 +23,15 @@ make
 ./test/test
 ```
 
+Default result:
+
+```
+build/libvcdwriter.a    # static library
+build/libvcdwriter.so   # shared library
+build/main              # simple test execution file
+build/test              # unit tests  execution file
+```
+
 
 ## Quick Start
 
