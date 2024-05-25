@@ -51,6 +51,13 @@ std::string now()
 }
 
 // -----------------------------
+bool validate_date(const std::string &date)
+{
+    // TODO: validate format
+    return true;
+}
+
+// -----------------------------
 void replace_new_lines(std::string &str, const std::string &sub)
 {
     bool nl = false;

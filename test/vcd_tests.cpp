@@ -6,12 +6,49 @@ using namespace vcd;
 
 // -----------------------------
 
+// Read the contents to the output file
+static std::string read_file()
+{
+    std::ifstream file("test.vcd");
+    EXPECT_TRUE(file.is_open());
+    std::string contents((std::istreambuf_iterator<char>(file)),
+                         std::istreambuf_iterator<char>());
+    return contents;
+}
+
+// -----------------------------
+
+// Test case for invalid timescale quan
+TEST(VCDHeaderTest, TimeScaleQuanInvalid)
+{
+    EXPECT_THROW(makeVCDHeader(TimeScale::_COUNT_), VCDTypeException);
+}
+
+// Test case for invalid timescale unit
+TEST(VCDHeaderTest, TimeScaleUnitInvalid)
+{
+    EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::_count_), VCDTypeException);
+}
+
+// -----------------------------
+
+// Test case for initializing VCDWriter
 TEST(VCDWriterTest, Constructor)
 {
     HeadPtr header;
-    EXPECT_NO_THROW(header = makeVCDHeader());
+    // empty date
+    EXPECT_NO_THROW(header = makeVCDHeader(TimeScale::HUNDRED, TimeScaleUnit::ms, "", "comment", "version"));
     EXPECT_NE(header, nullptr);
     EXPECT_NO_THROW(VCDWriter("test.vcd", header));
+
+    // Read the contents to the output file
+    const std::string contents = read_file();
+
+    // Assert that the contents of the file are correct
+    EXPECT_EQ(contents, "$timescale 100 ms $end\n"
+              "$comment comment $end\n"
+              "$version version $end\n"
+              "$enddefinitions $end\n");
 }
 
 // -----------------------------
@@ -32,6 +69,65 @@ protected:
 };
 
 // -----------------------------
+
+// Test case for flushing VCDWriter
+TEST_F(VCDWriterFixture, Flush)
+{
+    writer->flush();
+
+    // Read the contents to the output file
+    const std::string contents = read_file();
+
+    EXPECT_NE(contents.find("$enddefinitions"), std::string::npos);
+}
+
+// Test case for closing VCDWriter
+TEST_F(VCDWriterFixture, Close)
+{
+    writer->close();
+    EXPECT_THROW(writer->flush(), vcd::VCDPhaseException);
+}
+
+// Test case for changing variable after VCDWriter is closed
+TEST_F(VCDWriterFixture, ChangeAfterClose)
+{
+    auto var = writer->register_var(scope, name);
+    writer->close();
+    EXPECT_THROW(writer->change(var, 10, "1"), vcd::VCDPhaseException);
+}
+
+// Test case for aliasing variable after VCDWriter is closed
+TEST_F(VCDWriterFixture, AliasAfterClose)
+{
+    auto var = writer->register_var(scope, name);
+    writer->close();
+    EXPECT_THROW(writer->register_var(scope, name), vcd::VCDPhaseException);
+}
+
+// Test case for no scopes defined
+TEST_F(VCDWriterFixture, NoScopes)
+{
+    writer->flush();
+
+    // Read the contents to the output file
+    const std::string contents = read_file();
+
+    EXPECT_EQ(contents.find("$scope"), std::string::npos);
+}
+
+// Test case for one variable
+TEST_F(VCDWriterFixture, OneVar)
+{
+    auto var = writer->register_var(scope, name);
+    writer->change(var, 0, "1");
+    writer->flush();
+
+    // Read the contents to the output file
+    const std::string contents = read_file();
+
+    EXPECT_NE(contents.find(name), std::string::npos);
+    EXPECT_NE(contents.find("1"), std::string::npos);
+}
 
 TEST_F(VCDWriterFixture, RegisterVariables)
 {
@@ -102,9 +198,7 @@ TEST_F(VCDWriterFixture, DumpValues)
     writer->flush();
 
     // Read the contents to the output file
-    std::ifstream file("test.vcd");
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+    const std::string contents = read_file();
 
     // Assert that the contents of the file are correct
     EXPECT_EQ(contents, "$timescale 1 ns $end\n"
@@ -139,9 +233,7 @@ TEST_F(VCDWriterFixture, FlushClose)
     EXPECT_THROW(writer->flush(), VCDException);
 
     // Read the contents to the output file
-    std::ifstream file("test.vcd");
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+    const std::string contents = read_file();
 
     // Assert that the contents of the file are correct
     EXPECT_EQ(contents, "$timescale 1 ns $end\n"
@@ -170,9 +262,7 @@ TEST_F(VCDWriterFixture, SetScopeType)
     writer->flush();
 
     // Read the contents to the output file
-    std::ifstream file("test.vcd");
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+    const std::string contents = read_file();
 
     // Assert that the contents of the file are correct
     EXPECT_EQ(contents, "$timescale 1 ns $end\n"
@@ -197,9 +287,7 @@ TEST_F(VCDWriterFixture, SetScopeDefaultType)
     writer->flush();
 
     // Read the contents to the output file
-    std::ifstream file("test.vcd");
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+    const std::string contents = read_file();
 
     // Assert that the contents of the file are correct
     EXPECT_EQ(contents, "$timescale 1 ns $end\n"
@@ -224,9 +312,7 @@ TEST_F(VCDWriterFixture, SetScopeSep)
     writer->flush();
 
     // Read the contents to the output file
-    std::ifstream file("test.vcd");
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+    const std::string contents = read_file();
 
     // Assert that the contents of the file are correct
     EXPECT_EQ(contents, "$timescale 1 ns $end\n"
@@ -263,9 +349,7 @@ TEST_F(VCDWriterFixture, DumpOff)
     writer->flush();
 
     // Read the contents to the output file
-    std::ifstream file("test.vcd");
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+    const std::string contents = read_file();
 
     // Assert that the contents of the file are correct
     EXPECT_EQ(contents, "$timescale 1 ns $end\n"
@@ -293,25 +377,31 @@ TEST_F(VCDWriterFixture, DumpOn)
 
     // Change the value of the variable
     TimeStamp timestamp = 10;
-    VarValue value = "1";
+    VarValue value = { VCDValues::ZERO, VCDValues::ZERO, VCDValues::ZERO };
     writer->change(var, timestamp, value);
 
     // Dump off
     writer->dump_off(timestamp);
 
+    // Change the value of the variable again
+    value = { VCDValues::ZERO, VCDValues::ZERO, VCDValues::ONE };
+    writer->change(var, timestamp, value);
+
+    // Dump off twice
+    writer->dump_off(timestamp + 1);
+
     // Dump on
     writer->dump_on(timestamp + 1);
 
     // Change the value of the variable again
-    writer->change(var, timestamp + 2, value);
+    value = { VCDValues::ZERO, VCDValues::ONE, VCDValues::ONE };
+    writer->change(var, timestamp + 1, value);
 
     // Flush the VCDWriter object
     writer->flush();
 
     // Read the contents to the output file
-    std::ifstream file("test.vcd");
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+    const std::string contents = read_file();
 
     // Assert that the contents of the file are correct
     EXPECT_EQ(contents, "$timescale 1 ns $end\n"
@@ -325,15 +415,15 @@ TEST_F(VCDWriterFixture, DumpOn)
         "bxxx 0\n"
         "$end\n"
         "#10\n"
-        "b001 0\n"
+        "b000 0\n"
         "#10\n"
         "$dumpoff\n"
         "bx 0\n"
         "$end\n"
-        "#11$dumpon\n"
-        "b001 0\n"
-        "$end\n"
-        "#12\n");
+        "#11\n"
+        "$dumpon\n"
+        "#11\n"
+        "b011 0\n");
 }
 
 // -----------------------------

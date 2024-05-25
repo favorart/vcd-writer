@@ -2,8 +2,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <cassert>
-#include <sstream>
-#include <iostream>
+#include <algorithm>
+#include <list>
 #include "vcd_writer.h"
 
 
@@ -17,12 +17,12 @@ using namespace utils;
 // -----------------------------
 struct VCDHeader final
 {
-    static const unsigned kws = 4;
-    static const std::string kw_names[kws];
+    enum KW { KW_TIMESCALE, KW_DATE, KW_COMMENT, KW_VERSION, KW_COUNT_ };
+    static constexpr const char*const kw_names[KW_COUNT_]{ "$timescale", "$date", "$comment", "$version" };
 
-    TimeScale timescale_quan;
-    TimeScaleUnit timescale_unit;
-    std::string kw_values[kws];
+    const TimeScale timescale_quan;
+    const TimeScaleUnit timescale_unit;
+    const std::string kw_values[KW_COUNT_];
 
     VCDHeader() = delete;
     VCDHeader(VCDHeader&&) = default;
@@ -37,9 +37,17 @@ struct VCDHeader final
         kw_values{ timescale(), date, comment, version }
     {}
 
+private:
     std::string timescale() const
     {
-        const std::string TIMESCALE_UNITS[] = { "s", "ms", "us", "ns", "ps", "fs" };
+        if(timescale_quan >= TimeScale::_COUNT_)
+            throw VCDTypeException{ format("Invalid time scale quant %d", timescale_quan) };
+        if(timescale_unit >= TimeScaleUnit::_count_)
+            throw VCDTypeException{ format("Invalid time scale unit %d", timescale_unit) };
+        if(!utils::validate_date(kw_values[KW_DATE]))
+            throw VCDTypeException{ format("Invalid date '%s' format", kw_values[KW_DATE].c_str()) };
+
+        const char* TIMESCALE_UNITS[int(TimeScaleUnit::_count_)]{ "s", "ms", "us", "ns", "ps", "fs" };
         return std::to_string(int(timescale_quan)) + " " + TIMESCALE_UNITS[int(timescale_unit)];
     }
 };
@@ -50,9 +58,6 @@ HeadPtr makeVCDHeader(TimeScale timescale_quan, TimeScaleUnit timescale_unit, co
 {
     return HeadPtr{ new VCDHeader(timescale_quan, timescale_unit, date, comment, version) };
 }
-
-// -----------------------------
-const std::string VCDHeader::kw_names[VCDHeader::kws] = { "$timescale", "$date", "$comment", "$version" };
 
 // -----------------------------
 void VCDHeaderDeleter::operator()(VCDHeader *p) { delete p; }
@@ -78,6 +83,7 @@ bool ScopePtrHash::operator()(const ScopePtr &l, const ScopePtr &r) const
 // VCD variable details needed to call :meth:`VCDWriter.change()`.
 class VCDVariable
 {
+private:
     VCDVariable() = delete;
     VCDVariable(VCDVariable&&) = default;
     VCDVariable(const VCDVariable&) = delete;
@@ -85,7 +91,7 @@ class VCDVariable
 protected:
     VCDVariable(const std::string &name, VariableType type, unsigned size, ScopePtr scope, unsigned next_var_id);
 
-    std::string _ident;  // internal ID used in VCD output stream
+    unsigned    _ident;  // internal ID used in VCD output stream
     VariableType _type;  // VCD variable type, one of `VariableTypes`
     std::string  _name;  // human-readable name
     unsigned     _size;  // size of variable, in bits
@@ -95,6 +101,8 @@ protected:
     static const std::string VAR_TYPES[];
 
 public:
+    virtual ~VCDVariable() = default;
+
     //! string representation of variable declartion in VCD
     std::string declartion() const;
     //! string representation of value change record in VCD
@@ -180,7 +188,7 @@ struct VCDVectorVariable : public VCDVariable
 };
 
 // -----------------------------
-struct VarSearch
+struct VarSearch final
 {
     VCDScope vcd_scope = { "", ScopeType::module };
     ScopePtr ptr_scope = { &vcd_scope, [](VCDScope*) {} };
@@ -305,7 +313,7 @@ bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, 
         _timestamp = timestamp;
     }
 
-    std::string change_value = var->change_record(value);
+    VarValue change_value = var->change_record(value);
     // if value changed
     auto it = _vars_prevs.find(var);
     if (it != _vars_prevs.end())
@@ -319,11 +327,11 @@ bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, 
         if (!reg)
             throw VCDTypeException{ format("VCDVariable '%s' do not registered", var->_name.c_str()) };
         else
-            _vars_prevs.insert(std::make_pair(var, change_value));
+            _vars_prevs.emplace(var, change_value);
     }
     // dump it into file
     if (_dumping && !_registering)
-        fprintf(_ofile, "%s%s\n", change_value.c_str(), var->_ident.c_str());
+        fprintf(_ofile, "%s%x\n", change_value.c_str(), var->_ident);
     return true;
 }
 
@@ -364,31 +372,33 @@ void VCDWriter::_dump_off(TimeStamp timestamp)
     fprintf(_ofile, "$dumpoff\n");
     for (const auto &p : _vars_prevs)
     {
-        const char *ident = p.first->_ident.c_str();
+        const auto ident = p.first->_ident;
         const char *value = p.second.c_str();
 
         if (value[0] == 'r')
         {} // real variables cannot have "z" or "x" state
         else if (value[0] == 'b')
-        { fprintf(_ofile, "bx %s\n", ident); }
+        { fprintf(_ofile, "bx %x\n", ident); }
         //else if (value[0] == 's')
-        //{ fprintf(_ofile, "sx %s\n", ident); }
+        //{ fprintf(_ofile, "sx %x\n", ident); }
         else
-        { fprintf(_ofile, "x%s\n", ident); }
+        { fprintf(_ofile, "x%x\n", ident); }
     }
     fprintf(_ofile, "$end\n");
 }
 
 // -----------------------------
-void VCDWriter::_dump_values(const std::string &keyword)
+void VCDWriter::_dump_values(const char *keyword)
 {
-    fprintf(_ofile, "%s", (keyword + "\n").c_str());
+    fprintf(_ofile, "%s\n", keyword);
+    if(!_dumping)
+        return;
     // TODO : events should be excluded
     for (const auto &p : _vars_prevs)
     {
-        const char *ident = p.first->_ident.c_str();
+        const auto ident = p.first->_ident;
         const char *value = p.second.c_str();
-        fprintf(_ofile, "%s%s\n", value, ident);
+        fprintf(_ofile, "%s%x\n", value, ident);
     }
     fprintf(_ofile, "$end\n");
 }
@@ -406,14 +416,14 @@ void VCDWriter::_scope_declaration(const std::string &scope, ScopeType type, siz
 // -----------------------------
 void VCDWriter::_write_header()
 {
-    for (int i = 0; i < VCDHeader::kws; ++i)
+    for (int i = 0; i < VCDHeader::KW_COUNT_; ++i)
     {
         auto kwname = VCDHeader::kw_names[i];
         auto kwvalue = _header->kw_values[i];
-        if (!kwvalue.size())
+        if (kwvalue.empty())
             continue;
         replace_new_lines(kwvalue, "\n\t");
-        fprintf(_ofile, "%s %s $end\n", kwname.c_str(), kwvalue.c_str());
+        fprintf(_ofile, "%s %s $end\n", kwname, kwvalue.c_str());
     }
 
     // nested scope
@@ -501,17 +511,14 @@ void VCDWriter::_finalize_registration()
 
 // -----------------------------
 VCDVariable::VCDVariable(const std::string &name, VariableType type, unsigned size, ScopePtr scope, unsigned next_var_id) :
-    _name(name), _type(type), _size(size), _scope(scope)
+    _ident(next_var_id), _name(name), _type(type), _size(size), _scope(scope)
 {
-    std::stringstream ss;
-    ss << std::hex << next_var_id;
-    _ident = ss.str();
 }
 
 // -----------------------------
 std::string VCDVariable::declartion() const
 {
-    return format("$var %s %d %s %s $end", VAR_TYPES[int(_type)].c_str(), _size, _ident.c_str(), _name.c_str());
+    return format("$var %s %d %x %s $end", VAR_TYPES[int(_type)].c_str(), _size, _ident, _name.c_str());
 }
 
 // -----------------------------
@@ -522,21 +529,29 @@ VarValue VCDVectorVariable::change_record(const VarValue &value) const
     if (value.size() > _size)
         throw VCDTypeException{ format("Invalid binary vector value '%s' size '%d'", value.c_str(), _size) };
 
-    std::string val = ('b' + value + ' ');
+    static VarValue val; // no thread safe mem-alloc optimization
+    val.reserve(_size + 2);
+    val = ('b' + value + ' ');
+
     auto val_sz = value.size();
-    
     for (auto i = 1u; i < (val_sz - 1); ++i)
     {
-        char &c = val[i];
-        c = tolower(val[i]);
-        if (c != VCDValues::ONE && c != VCDValues::ZERO && c != VCDValues::UNDEF && c != VCDValues::HIGHV)
+        val[i] = tolower(val[i]);
+        switch(val[i])
+        {
+        case VCDValues::ONE:
+        case VCDValues::ZERO:
+        case VCDValues::UNDEF:
+        case VCDValues::HIGHV:
+            break;
+        default:
             throw VCDTypeException{ format("Invalid binary vector value '%s' size '%d'", val.c_str(), _size) };
+        }
     }
 
-    if (!val_sz) val = ('b' + std::string(_size, VCDValues::UNDEF) + ' ');
-
-    // align
-    else if (val_sz < _size)
+    if (!val_sz)
+        val = ('b' + std::string(_size, VCDValues::UNDEF) + ' ');
+    else if (val_sz < _size) // align
     {
         /***
          * Example: _size = 4, a 4 bit vector

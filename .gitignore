@@ -4,11 +4,14 @@
 # MS VS build files
 *.vsidx
 *.db
+*.idb
 *.pdb
 *.ilk
 *.suo
 *.p7s
 *.ipch
+*.ipdb
+*.iobj
 *.tlog
 *.nupkg
 *.recipe

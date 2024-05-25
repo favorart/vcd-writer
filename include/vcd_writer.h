@@ -2,14 +2,10 @@
 
 #include <unordered_map>
 #include <unordered_set>
-#include <algorithm>
 #include <string>
 #include <cctype>
 #include <memory>
-#include <ctime>
-#include <list>
 #include <set>
-#include <map>
 #ifdef _MSC_VER
 #pragma warning (disable : 4996)
 #endif
@@ -19,6 +15,7 @@ namespace utils {
 // -----------------------------
 std::string format(const char *fmt, ...);
 std::string now();
+bool validate_date(const std::string&);
 }
 
 // -----------------------------
@@ -31,13 +28,13 @@ enum class VariableType : char
   supply0, supply1, tri, triand, trior, trireg, tri0, tri1, wand, wor };
 // valid timescale numbers
 enum class TimeScale : char
-{ ONE = 1, TEN = 10, HUNDRED = 100 };
+{ ONE = 1, TEN = 10, HUNDRED = 100, _COUNT_ };
 // valid timescale units
 enum class TimeScaleUnit : char
-{ s, ms, us, ns, ps, fs };
+{ s, ms, us, ns, ps, fs, _count_ };
 // -----------------------------
 enum VCDValues : char
-{ ONE='1', ZERO='0', UNDEF='x', HIGHV='z' };
+{ ONE='1', ZERO='0', UNDEF='x', HIGHV='z', _COUNT_ };
 
 using TimeStamp = unsigned;
 using VarValue = std::string;
@@ -100,35 +97,12 @@ HeadPtr makeVCDHeader(TimeScale     timescale_quan = TimeScale::ONE,
 // A VCD file captures time-ordered changes to the value of variables
 class VCDWriter
 {
-    FILE *_ofile;
-    TimeStamp _timestamp;
-    HeadPtr _header;
-
-    // settings
-    std::string _filename;
-    std::string _scope_sep;
-    ScopeType   _scope_def_type;
-
-    std::set<ScopePtr, ScopePtrHash> _scopes;
-    std::unordered_set<VarPtr, VarPtrHash, VarPtrEqual> _vars;
-
-    // check changes of vars' values
-    std::unordered_map<VarPtr, VarValue> _vars_prevs;
-
-    // state
-    bool _closed;
-    bool _dumping;
-    bool _registering;
-    // gen var idents (internal names)
-    unsigned   _next_var_id;
-    VarSearchPtr _search;
-
 public:
     VCDWriter(const std::string &filename, HeadPtr &header, unsigned init_timestamp = 0u);
     VCDWriter(VCDWriter&&) = delete;
     VCDWriter(const VCDWriter&) = delete;
 
-    virtual ~VCDWriter() { close(); fclose(this->_ofile); }
+    virtual ~VCDWriter() { close(NULL); fclose(this->_ofile); }
 
     // Register a VCD variable and return its mark to change value further.
     // Remember, all VCD variables must be registered prior to any value changes.
@@ -152,17 +126,17 @@ public:
     bool change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value);
 
     // Suspend dumping to VCD file
-    void dump_off(TimeStamp current)
+    void dump_off(TimeStamp timestamp)
     {
         if (_dumping && !_registering && _vars_prevs.size())
-            _dump_off(current);
+            _dump_off(timestamp);
         _dumping = false;
     }
     // Resume dumping to VCD file
-    void dump_on(TimeStamp current)
+    void dump_on(TimeStamp timestamp)
     {
         if (!_dumping && !_registering && _vars_prevs.size())
-            fprintf(_ofile, "#%d", current);
+            fprintf(_ofile, "#%d\n", timestamp);
         _dump_values("$dumpon");
         _dumping = true;
     }
@@ -170,32 +144,32 @@ public:
     // Flush any buffered VCD data to output file.
     // If the VCD header has not already been written, calling `flush()` will force
     // the header to be written thus disallowing any further variable registrations.
-    void flush(const TimeStamp *current = NULL)
+    void flush(const TimeStamp *timestamp = NULL)
     {
         if (_closed)
             throw VCDPhaseException{ "Cannot flush() after close()" };
         if (_registering)
             _finalize_registration();
-        if (current != NULL && *current > _timestamp)
-            fprintf(_ofile, "#%d", *current);
+        if (timestamp != NULL && *timestamp > _timestamp)
+            fprintf(_ofile, "#%d\n", *timestamp);
         fflush(_ofile);
     }
     // Close VCD writer. Any buffered VCD data is flushed to the output file.
     // After `close()`, NO variable registration or value changes will be accepted.
     // Note, the output file-stream will be closed in destructor of `VCDWriter`
-    void close(const TimeStamp *final = NULL)
+    void close(const TimeStamp *timestamp = NULL)
     {
         if (_closed)
             return;
-        flush(final);
+        flush(timestamp);
         _closed = true;
     }
 
     //! VCD viewer applications may display different scope types differently
     void set_scope_type(std::string& scope, ScopeType);
 
-    void set_scope_default_type(ScopeType new_type)
-    { _scope_def_type = new_type; }
+    void set_scope_default_type(ScopeType type)
+    { _scope_def_type = type; }
 
     void set_scope_sep(const std::string& scope_sep)
     {
@@ -211,12 +185,36 @@ public:
 protected:
     bool _change(VarPtr, TimeStamp, const VarValue&, bool);
     void _dump_off(TimeStamp);
-    void _dump_values(const std::string& keyword);
+    void _dump_values(const char *keyword);
     void _scope_declaration(const std::string& scope, ScopeType type, size_t sub_beg, size_t sub_end = std::string::npos);
     //! Dump VCD header into file
     void _write_header();
     //! Turn to dumping phase, no more variables regestration allowed
     void _finalize_registration();
+
+private:
+    FILE *_ofile;
+    TimeStamp _timestamp;
+    HeadPtr _header;
+
+    // settings
+    std::string _filename;
+    std::string _scope_sep;
+    ScopeType   _scope_def_type;
+
+    std::set<ScopePtr, ScopePtrHash> _scopes;
+    std::unordered_set<VarPtr, VarPtrHash, VarPtrEqual> _vars;
+
+    // check changes of vars' values
+    std::unordered_map<VarPtr, VarValue> _vars_prevs;
+
+    // state
+    bool _closed;
+    bool _dumping;
+    bool _registering;
+    // gen var idents (internal names)
+    unsigned   _next_var_id;
+    VarSearchPtr _search;
 };
 
 // -----------------------------
