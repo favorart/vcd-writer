@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 project(vcdwriter)
 
+# Options to control build
+option(VCDWRITER_BUILD_MAIN "Build the main executable" ON)
+option(VCDWRITER_BUILD_TESTS "Build unit tests" ON)
+
 # Use C++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,7 +23,7 @@ include_directories(${INCLUDE_PATH})
 # =========================
 include(FetchContent)
 
-# Microsoft GSL (Guideline Support Library)
+# Microsoft GSL
 FetchContent_Declare(
   GSL
   GIT_REPOSITORY https://github.com/microsoft/GSL.git
@@ -27,15 +31,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(GSL)
 
-# GoogleTest for unit testing
-FetchContent_Declare(
-  googletest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG v1.14.0
-)
-FetchContent_MakeAvailable(googletest)
-
-enable_testing()
+# GoogleTest
+if (VCDWRITER_BUILD_TESTS)
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.14.0
+  )
+  FetchContent_MakeAvailable(googletest)
+  enable_testing()
+endif()
 
 # =========================
 # Gather source files
@@ -60,24 +65,40 @@ target_link_libraries(vcdwriter_static PUBLIC GSL)
 # =========================
 # main executable
 # =========================
-add_executable(main_exec ${TEST_PATH}/main.cpp)
-target_link_libraries(main_exec PRIVATE vcdwriter_shared)
+if (VCDWRITER_BUILD_MAIN)
+  add_executable(main_exec ${TEST_PATH}/main.cpp)
+  target_link_libraries(main_exec PRIVATE vcdwriter_shared)
+endif()
 
 # =========================
 # Unit tests
 # =========================
-add_executable(test_exec ${TEST_PATH}/vcd_tests.cpp)
-target_link_libraries(test_exec PRIVATE vcdwriter_shared GTest::gtest GTest::gtest_main pthread)
-add_test(NAME vcdwriter_tests COMMAND test_exec)
+if (VCDWRITER_BUILD_TESTS)
+  add_executable(test_exec ${TEST_PATH}/vcd_tests.cpp)
+  target_link_libraries(test_exec PRIVATE vcdwriter_shared GTest::gtest GTest::gtest_main pthread)
+  add_test(NAME vcdwriter_tests COMMAND test_exec)
+endif()
 
 # =========================
 # Output directories
 # =========================
 set_target_properties(
-    vcdwriter_shared vcdwriter_static main_exec test_exec
+    vcdwriter_shared vcdwriter_static
     PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${BUILD_PATH}
         ARCHIVE_OUTPUT_DIRECTORY ${BUILD_PATH}
         LIBRARY_OUTPUT_DIRECTORY ${BUILD_PATH}
 )
+
+if (TARGET main_exec)
+  set_target_properties(main_exec PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${BUILD_PATH}
+  )
+endif()
+
+if (TARGET test_exec)
+  set_target_properties(test_exec PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${BUILD_PATH}
+  )
+endif()
 
