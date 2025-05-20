@@ -6,6 +6,9 @@
 #include <cctype>
 #include <memory>
 #include <set>
+#include <utility>
+#include <gsl/gsl>
+
 #ifdef _MSC_VER
 #pragma warning (disable : 4996)
 #endif
@@ -44,7 +47,7 @@ class VCDException : public std::exception
 {
 public:
     explicit VCDException(const std::string & message) : m_message("VCD error: " + message) {}
-    virtual const char* what() const throw () { return m_message.c_str(); }
+    [[nodiscard]]  const char* what() const noexcept override { return m_message.c_str(); }
 
 private:
     const std::string m_message;
@@ -98,11 +101,13 @@ HeadPtr makeVCDHeader(TimeScale     timescale_quan = TimeScale::ONE,
 class VCDWriter
 {
 public:
-    VCDWriter(const std::string &filename, HeadPtr &header, unsigned init_timestamp = 0u);
+    VCDWriter(std::string filename, HeadPtr &header, unsigned init_timestamp = 0u);
     VCDWriter(VCDWriter&&) = delete;
     VCDWriter(const VCDWriter&) = delete;
+    VCDWriter& operator=(const VCDWriter&) = delete;
+    VCDWriter& operator=(VCDWriter&&) = delete;
 
-    virtual ~VCDWriter() { close(NULL); fclose(this->_ofile); }
+    virtual ~VCDWriter() { close(nullptr); if (_ofile) fclose(this->_ofile); }
 
     // Register a VCD variable and return its mark to change value further.
     // Remember, all VCD variables must be registered prior to any value changes.
@@ -121,7 +126,7 @@ public:
     // Return:  *true* if new_value is dumped into VCD file,
     //         *false* if new_value is not changed from priveios *timestamp* for a given var
     bool change(VarPtr var, TimeStamp timestamp, const VarValue &value)
-    { return _change(var, timestamp, value, false); }
+    { return _change(std::move(var), timestamp, value, false); }
 
     bool change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value);
 
@@ -144,7 +149,7 @@ public:
     // Flush any buffered VCD data to output file.
     // If the VCD header has not already been written, calling `flush()` will force
     // the header to be written thus disallowing any further variable registrations.
-    void flush(const TimeStamp *timestamp = NULL)
+    void flush(const TimeStamp *timestamp = nullptr)
     {
         if (_closed)
             throw VCDPhaseException{ "Cannot flush() after close()" };
@@ -157,7 +162,7 @@ public:
     // Close VCD writer. Any buffered VCD data is flushed to the output file.
     // After `close()`, NO variable registration or value changes will be accepted.
     // Note, the output file-stream will be closed in destructor of `VCDWriter`
-    void close(const TimeStamp *timestamp = NULL)
+    void close(const TimeStamp *timestamp = nullptr)
     {
         if (_closed)
             return;
@@ -193,28 +198,28 @@ protected:
     void _finalize_registration();
 
 private:
-    FILE *_ofile;
+    gsl::owner<FILE*> _ofile{};
     TimeStamp _timestamp;
     HeadPtr _header;
 
     // settings
-    std::string _filename;
     std::string _scope_sep;
-    ScopeType   _scope_def_type;
+    ScopeType   _scope_def_type{};
+    std::string _filename;
 
     std::set<ScopePtr, ScopePtrHash> _scopes;
     std::unordered_set<VarPtr, VarPtrHash, VarPtrEqual> _vars;
 
     // check changes of vars' values
-    std::unordered_map<VarPtr, VarValue> _vars_prevs;
-
     // state
-    bool _closed;
-    bool _dumping;
-    bool _registering;
+    bool _closed{};
+    bool _dumping{};
+    bool _registering{};
     // gen var idents (internal names)
-    unsigned   _next_var_id;
+    unsigned   _next_var_id{};
     VarSearchPtr _search;
+
+    std::unordered_map<VarPtr, VarValue> _vars_prevs;
 };
 
 // -----------------------------

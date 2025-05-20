@@ -1,4 +1,6 @@
+#include <array>
 #include <cstdarg>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <ctime>
@@ -8,8 +10,7 @@
 
 
 
-namespace vcd {
-namespace utils {
+namespace vcd::utils {
 // -----------------------------
 std::string format(const char *fmt, ...)
 {
@@ -25,9 +26,9 @@ std::string format(const char *fmt, ...)
         {
             va_end(args);
             va_end(args2);
-            return std::string(v.data());
+            return {v.data()};
         }
-        size_t size;
+        size_t size = 0;
         if (res < 0)
             size = v.size() * 2;
         else
@@ -41,17 +42,24 @@ std::string format(const char *fmt, ...)
 // -----------------------------
 std::string now()
 {
-    std::time_t rawtime;
-    struct tm *timeinfo;
-    char buffer[80];
+    std::time_t rawtime = 0;
+    struct tm *timeinfo = nullptr;
+    std::array<char, 80> buffer{};
     std::time(&rawtime);
-    timeinfo = std::localtime(&rawtime);
-    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
-    return { buffer };
+    #if defined(_WIN32) || defined(_MSC_VER)
+        struct tm timeinfo_storage;
+        localtime_s(&timeinfo_storage, &rawtime);
+        timeinfo = &timeinfo_storage;
+    #else
+        struct tm timeinfo_storage{};
+        timeinfo = localtime_r(&rawtime, &timeinfo_storage);
+    #endif
+    std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", timeinfo);
+    return {buffer.data(), std::strlen(buffer.data())};
 }
 
 // -----------------------------
-bool validate_date(const std::string &date)
+bool validate_date([[maybe_unused]]const std::string &date)
 {
     // TODO: validate format
     return true;
@@ -80,5 +88,5 @@ void replace_new_lines(std::string &str, const std::string &sub)
 
 // -----------------------------
 }
-}
+
    
