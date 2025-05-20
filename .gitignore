@@ -58,5 +58,4 @@ build/
 # Other
 *.vcd
 *.bak
-*.txt
 *.log
