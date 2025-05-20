@@ -47,6 +47,7 @@ file(GLOB_RECURSE SOURCE_FILES "${SRC_PATH}/*.cpp")
 # =========================
 add_library(vcdwriter_shared SHARED ${SOURCE_FILES})
 target_include_directories(vcdwriter_shared PUBLIC ${INCLUDE_PATH})
+add_library(vcdwriter::vcdwriter_shared ALIAS vcdwriter_shared)
 target_link_libraries(vcdwriter_shared PUBLIC GSL)
 
 # =========================
