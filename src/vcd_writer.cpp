@@ -152,7 +152,7 @@ struct VCDScalarVariable : public VCDVariable
     {}
     [[nodiscard]] VarValue change_record(const VarValue &value) const override
     {
-        char c = (value.size()) ? static_cast<char>(tolower(static_cast<unsigned char>(value[0]))) : VCDValues::UNDEF;
+	            char c = (value.size()) ? static_cast<char>(tolower(static_cast<unsigned char>(value[0]))) : static_cast<char>(VCDValues::UNDEF);
         if (value.size() != 1 || (c != VCDValues::ONE   && c != VCDValues::ZERO
                                && c != VCDValues::UNDEF && c != VCDValues::HIGHV))
             throw VCDTypeException{ format("Invalid scalar value '%c'", c) };
