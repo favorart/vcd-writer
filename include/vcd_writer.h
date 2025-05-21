@@ -155,7 +155,7 @@ public:
             throw VCDPhaseException{ "Cannot flush() after close()" };
         if (_registering)
             _finalize_registration();
-        if (timestamp != NULL && *timestamp > _timestamp)
+        if (timestamp != nullptr && *timestamp > _timestamp)
             fprintf(_ofile, "#%d\n", *timestamp);
         fflush(_ofile);
     }
