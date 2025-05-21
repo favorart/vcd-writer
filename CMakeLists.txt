@@ -40,13 +40,6 @@ if (VCDWRITER_BUILD_TESTS)
   enable_testing()
 endif()
 
-# Source files (fail if missing)
-file(GLOB_RECURSE SOURCE_FILES "${SRC_PATH}/*.cpp")
-
-if (NOT SOURCE_FILES)
-  message(FATAL_ERROR "No source files found in '${SRC_PATH}' — the 'src' directory is required.")
-endif()
-
 # Shared library
 add_library(vcdwriter_shared SHARED ${SOURCE_FILES})
 target_include_directories(vcdwriter_shared PUBLIC ${INCLUDE_PATH})
