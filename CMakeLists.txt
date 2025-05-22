@@ -11,9 +11,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Paths
-set(SRC_PATH "${CMAKE_SOURCE_DIR}/src")
-set(INCLUDE_PATH "${CMAKE_SOURCE_DIR}/include")
-set(TEST_PATH "${CMAKE_SOURCE_DIR}/test")
+set(SRC_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(TEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test")
 set(BUILD_PATH "${CMAKE_BINARY_DIR}")
 
 include_directories(${INCLUDE_PATH})
@@ -40,14 +40,16 @@ if (VCDWRITER_BUILD_TESTS)
   enable_testing()
 endif()
 
+file(GLOB_RECURSE SOURCE_FILES "${SRC_PATH}/*.cpp")
+
 # Shared library
-add_library(vcdwriter_shared SHARED ${SOURCE_FILES})
+add_library(vcdwriter_shared SHARED "${SOURCE_FILES}")
 target_include_directories(vcdwriter_shared PUBLIC ${INCLUDE_PATH})
 target_link_libraries(vcdwriter_shared PUBLIC GSL)
 add_library(vcdwriter::vcdwriter_shared ALIAS vcdwriter_shared)
 
 # Static library
-add_library(vcdwriter_static STATIC ${SOURCE_FILES})
+add_library(vcdwriter_static STATIC "${SOURCE_FILES}")
 target_include_directories(vcdwriter_static PUBLIC ${INCLUDE_PATH})
 target_link_libraries(vcdwriter_static PUBLIC GSL)
 
