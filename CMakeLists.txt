@@ -40,7 +40,10 @@ if (VCDWRITER_BUILD_TESTS)
   enable_testing()
 endif()
 
-file(GLOB_RECURSE SOURCE_FILES "${SRC_PATH}/*.cpp")
+set(SOURCE_FILES
+  "${SRC_PATH}/vcd_writer.cpp"
+  "${SRC_PATH}/vcd_utils.cpp"
+)
 
 # Shared library
 add_library(vcdwriter_shared SHARED "${SOURCE_FILES}")
