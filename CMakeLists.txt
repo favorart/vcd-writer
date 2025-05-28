@@ -21,13 +21,13 @@ include_directories(${INCLUDE_PATH})
 # Dependencies
 include(FetchContent)
 
-# Microsoft GSL
+# FMT Library
 FetchContent_Declare(
-  GSL
-  GIT_REPOSITORY https://github.com/microsoft/GSL.git
-  GIT_TAG v4.0.0
+  fmt 
+  GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+  GIT_TAG befbc5fdb838040b3721d13b59e32edb122f224d # head of master
 )
-FetchContent_MakeAvailable(GSL)
+FetchContent_MakeAvailable(fmt)
 
 # GoogleTest (optional)
 if (VCDWRITER_BUILD_TESTS)
@@ -48,13 +48,13 @@ set(SOURCE_FILES
 # Shared library
 add_library(vcdwriter_shared SHARED "${SOURCE_FILES}")
 target_include_directories(vcdwriter_shared PUBLIC ${INCLUDE_PATH})
-target_link_libraries(vcdwriter_shared PUBLIC GSL)
+target_link_libraries(vcdwriter_shared PUBLIC fmt::fmt)
 add_library(vcdwriter::vcdwriter_shared ALIAS vcdwriter_shared)
 
 # Static library
 add_library(vcdwriter_static STATIC "${SOURCE_FILES}")
 target_include_directories(vcdwriter_static PUBLIC ${INCLUDE_PATH})
-target_link_libraries(vcdwriter_static PUBLIC GSL)
+target_link_libraries(vcdwriter_static PUBLIC fmt::fmt)
 
 # Output directories
 set_target_properties(

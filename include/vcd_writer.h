@@ -7,7 +7,9 @@
 #include <memory>
 #include <set>
 #include <utility>
-#include <gsl/gsl>
+#include <fmt/base.h>
+#include <fmt/core.h>
+#include <fmt/os.h>
 
 #ifdef _MSC_VER
 #pragma warning (disable : 4996)
@@ -107,7 +109,7 @@ public:
     VCDWriter& operator=(const VCDWriter&) = delete;
     VCDWriter& operator=(VCDWriter&&) = delete;
 
-    virtual ~VCDWriter() { close(nullptr); if (_ofile) fclose(this->_ofile); }
+    virtual ~VCDWriter() { close(nullptr); }
 
     // Register a VCD variable and return its mark to change value further.
     // Remember, all VCD variables must be registered prior to any value changes.
@@ -141,7 +143,7 @@ public:
     void dump_on(TimeStamp timestamp)
     {
         if (!_dumping && !_registering && _vars_prevs.size())
-            fprintf(_ofile, "#%d\n", timestamp);
+            _ofile.print("#{:d}\n", timestamp);
         _dump_values("$dumpon");
         _dumping = true;
     }
@@ -156,8 +158,8 @@ public:
         if (_registering)
             _finalize_registration();
         if (timestamp != nullptr && *timestamp > _timestamp)
-            fprintf(_ofile, "#%d\n", *timestamp);
-        fflush(_ofile);
+            _ofile.print("#{:d}\n", *timestamp);
+        _ofile.flush();
     }
     // Close VCD writer. Any buffered VCD data is flushed to the output file.
     // After `close()`, NO variable registration or value changes will be accepted.
@@ -198,7 +200,6 @@ protected:
     void _finalize_registration();
 
 private:
-    gsl::owner<FILE*> _ofile{};
     TimeStamp _timestamp;
     HeadPtr _header;
 
@@ -206,6 +207,7 @@ private:
     std::string _scope_sep;
     ScopeType   _scope_def_type{};
     std::string _filename;
+    fmt::ostream _ofile;
 
     std::set<ScopePtr, ScopePtrHash> _scopes;
     std::unordered_set<VarPtr, VarPtrHash, VarPtrEqual> _vars;
@@ -226,3 +228,4 @@ private:
 using WriterPtr = std::shared_ptr<VCDWriter>;
 
 }
+

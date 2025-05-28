@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cassert>
 #include <algorithm>
+#include <array>
 #include <list>
 #include <utility>
 #include "vcd_writer.h"
@@ -218,14 +219,12 @@ VCDWriter::VCDWriter(std::string filename, HeadPtr &header, unsigned init_timest
     _filename(std::move(filename)),
     _dumping(true),
     _registering(true),
-    _search(std::make_shared<VarSearch>(_scope_def_type))
+    _search(std::make_shared<VarSearch>(_scope_def_type)),
+    _ofile(fmt::output_file(_filename))
 {
     if (!_header)
         throw VCDTypeException{ "Invalid pointer to header" };
-
-    _ofile = std::fopen(_filename.c_str(), "w");
-    if (!_ofile)
-        throw VCDTypeException{ format("Can't open file '%s' for writing", _filename.c_str()) };
+    
 }
 
 // -----------------------------
@@ -317,7 +316,7 @@ bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, 
         if (_registering)
             _finalize_registration();
         if (_dumping)
-            fprintf(_ofile, "#%d\n", timestamp);
+            _ofile.print("#{:d}\n", timestamp);
         _timestamp = timestamp;
     }
 
@@ -339,7 +338,7 @@ bool VCDWriter::_change(VarPtr var, TimeStamp timestamp, const VarValue &value, 
     }
     // dump it into file
     if (_dumping && !_registering)
-        fprintf(_ofile, "%s%x\n", change_value.c_str(), var->_ident);
+        _ofile.print("{:s}{:x}\n", change_value.c_str(), var->_ident);
     return true;
 }
 
@@ -368,7 +367,7 @@ void VCDWriter::set_scope_type(std::string &scope, ScopeType scope_type)
     _search->vcd_scope.name = scope;
     auto it = _scopes.find(_search->ptr_scope);
     if (it == _scopes.end())
-        throw VCDPhaseException{ utils::format("Such scope '%s' does not exist", scope.c_str()) };
+        throw VCDPhaseException{ format("Such scope '%s' does not exist", scope.c_str()) };
     (**it).type = scope_type;
 }
 
@@ -376,8 +375,8 @@ void VCDWriter::set_scope_type(std::string &scope, ScopeType scope_type)
 // -----------------------------
 void VCDWriter::_dump_off(TimeStamp timestamp)
 {
-    fprintf(_ofile, "#%d\n", timestamp);
-    fprintf(_ofile, "$dumpoff\n");
+    _ofile.print("#{:d}\n", timestamp);
+    _ofile.print("$dumpoff\n");
     for (const auto &p : _vars_prevs)
     {
         const auto ident = p.first->_ident;
@@ -386,19 +385,19 @@ void VCDWriter::_dump_off(TimeStamp timestamp)
         if (value[0] == 'r')
         {} // real variables cannot have "z" or "x" state
         else if (value[0] == 'b')
-        { fprintf(_ofile, "bx %x\n", ident); }
+        { _ofile.print("bx {:x}\n", ident); }
         //else if (value[0] == 's')
-        //{ fprintf(_ofile, "sx %x\n", ident); }
+        //{ _ofile.print("sx %x\n", ident); }
         else
-        { fprintf(_ofile, "x%x\n", ident); }
+        { _ofile.print("x{:x}\n", ident); }
     }
-    fprintf(_ofile, "$end\n");
+    _ofile.print("$end\n");
 }
 
 // -----------------------------
 void VCDWriter::_dump_values(const char *keyword)
 {
-    fprintf(_ofile, "%s\n", keyword);
+    _ofile.print("{:s}\n", keyword);
     if(!_dumping)
         return;
     // TODO : events should be excluded
@@ -406,9 +405,9 @@ void VCDWriter::_dump_values(const char *keyword)
     {
         const auto ident = p.first->_ident;
         const char *value = p.second.c_str();
-        fprintf(_ofile, "%s%x\n", value, ident);
+        _ofile.print("{:s}{:x}\n", value, ident);
     }
-    fprintf(_ofile, "$end\n");
+    _ofile.print("$end\n");
 }
 
 // -----------------------------
@@ -418,7 +417,7 @@ void VCDWriter::_scope_declaration(const std::string &scope, ScopeType type, siz
 
     auto scope_name = scope.substr(sub_beg, sub_end - sub_beg);
     auto scope_type = SCOPE_TYPES[int(type)].c_str();
-    fprintf(_ofile, "$scope %s %s $end\n", scope_type, scope_name.c_str());
+    _ofile.print("$scope {:s} {:s} $end\n", scope_type, scope_name.c_str());
 }
 
 // -----------------------------
@@ -431,7 +430,7 @@ void VCDWriter::_write_header()
         if (kwvalue.empty())
             continue;
         replace_new_lines(kwvalue, "\n\t");
-        fprintf(_ofile, "%s %s $end\n", kwname, kwvalue.c_str());
+        _ofile.print("{:s} {:s} $end\n", kwname, kwvalue.c_str());
     }
 
     // nested scope
@@ -456,12 +455,12 @@ void VCDWriter::_write_header()
             }
             // last
             if (n_prev != (scope_prev.size() + _scope_sep.size()))
-                fprintf(_ofile, "$upscope $end\n");
+                _ofile.print("$upscope $end\n");
             // close
             n = scope_prev.find(_scope_sep, n_prev);
             while (n != std::string::npos)
             {
-                fprintf(_ofile, "$upscope $end\n");
+                _ofile.print("$upscope $end\n");
                 n = scope_prev.find(_scope_sep, n + _scope_sep.size());
             }
         }
@@ -479,7 +478,7 @@ void VCDWriter::_write_header()
 
         // dump variable declartion
         for (const auto& var : s->vars)
-            fprintf(_ofile, "%s\n", var->declartion().c_str());
+            _ofile.print("{:s}\n", var->declartion().c_str());
 
         scope_prev = scope;
     }
@@ -488,16 +487,16 @@ void VCDWriter::_write_header()
     if (scope_prev.size())
     {
         // last
-        fprintf(_ofile, "$upscope $end\n");
+        _ofile.print("$upscope $end\n");
         n = scope_prev.find(_scope_sep);
         while (n != std::string::npos)
         {
-            fprintf(_ofile, "$upscope $end\n");
+            _ofile.print("$upscope $end\n");
             n = scope_prev.find(_scope_sep, n + _scope_sep.size());
         }
     }
 
-    fprintf(_ofile, "$enddefinitions $end\n");
+    _ofile.print("$enddefinitions $end\n");
     // do not need anymore
     _header.reset(nullptr);
 }
@@ -509,7 +508,7 @@ void VCDWriter::_finalize_registration()
     _write_header();
     if (_vars_prevs.size())
     {
-        fprintf(_ofile, "#%d\n", _timestamp);
+        _ofile.print("#{:d}\n", _timestamp);
         _dump_values("$dumpvars");
         if (!_dumping)
             _dump_off(_timestamp);
@@ -595,4 +594,5 @@ VarValue VCDVectorVariable::change_record(const VarValue &value) const
 
 // -----------------------------
 } //end namespace vcd
+
 
