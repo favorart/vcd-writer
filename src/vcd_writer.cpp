@@ -65,7 +65,7 @@ HeadPtr makeVCDHeader(TimeScale timescale_quan, TimeScaleUnit timescale_unit, co
 }
 
 // -----------------------------
-void VCDHeaderDeleter::operator()(VCDHeader *p) { std::unique_ptr<VCDHeader> varname(p); }
+void VCDHeaderDeleter::operator()(VCDHeader *p) { delete p; }
 
 // -----------------------------
 struct VCDScope final
@@ -74,8 +74,8 @@ struct VCDScope final
     ScopeType   type;
     std::list<VarPtr> vars;
 
-    VCDScope(std::string name, ScopeType type) : 
-        name(std::move(name)), type(type) {}
+    VCDScope(std::string_view name, ScopeType type) : 
+        name(name), type(type) {}
 };
 
 // -----------------------------
@@ -153,7 +153,7 @@ struct VCDScalarVariable : public VCDVariable
     {}
     [[nodiscard]] VarValue change_record(const VarValue &value) const override
     {
-	            char c = (value.size()) ? static_cast<char>(tolower(static_cast<unsigned char>(value[0]))) : static_cast<char>(VCDValues::UNDEF);
+        char c = (value.size())? char(tolower(value[0])) : char(VCDValues::UNDEF);
         if (value.size() != 1 || (c != VCDValues::ONE   && c != VCDValues::ZERO
                                && c != VCDValues::UNDEF && c != VCDValues::HIGHV))
             throw VCDTypeException{ format("Invalid scalar value '%c'", c) };

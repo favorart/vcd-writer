@@ -46,14 +46,7 @@ std::string now()
     struct tm *timeinfo = nullptr;
     std::array<char, 80> buffer{};
     std::time(&rawtime);
-    #if defined(_WIN32) || defined(_MSC_VER)
-        struct tm timeinfo_storage;
-        localtime_s(&timeinfo_storage, &rawtime);
-        timeinfo = &timeinfo_storage;
-    #else
-        struct tm timeinfo_storage{};
-        timeinfo = localtime_r(&rawtime, &timeinfo_storage);
-    #endif
+    timeinfo = std::localtime(&rawtime);
     std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", timeinfo);
     return {buffer.data(), std::strlen(buffer.data())};
 }
