@@ -6,8 +6,37 @@ Visit [PyVCD on GitHub](https://github.com/SanDisk-Open-Source/pyvcd/).
 
 It writes Value Change Dump (VCD) files as specified in IEEE 1364-2005.
 
+## Install with CMake
+Create a `CMakeLists.txt` file on the root directory of your project and use the `CPMAddPackage` command to include this library in your project.
+Here's an example of a CMakeLists.txt file:
+```
+cmake_minimum_required(VERSION 3.14)
+project(
+    projectName
+    VERSION 2025.0.1 
+    LANGUAGES CXX
+)
 
-## Install
+include(cmake/CPM.cmake)
+
+CPMAddPackage(
+    NAME libvcdwriter
+    GITHUB_REPOSITORY harris2001/vcd-converter
+    GIT_TAG master
+    DOWNLOAD_ONLY TRUE
+    options
+        "VCDWRITER_BUILD_MAIN OFF"
+        "VCDWRITER_BUILD_TESTS OFF"
+)
+
+add_subdirectory(${libvcdwriter_SOURCE_DIR})
+
+add_executable(mainApp ../main.cpp)
+target_link_libraries(mainApp PRIVATE vcdwriter::vcdwriter_shared)
+ 
+```
+
+## Install with Make
 
 ```
 # install gtests (ubuntu)
