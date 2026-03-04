@@ -41,7 +41,7 @@ enum class TimeScaleUnit : char
 enum VCDValues : char
 { ONE='1', ZERO='0', UNDEF='x', HIGHV='z', _COUNT_ };
 
-using TimeStamp = unsigned;
+using TimeStamp = uint64_t;
 using VarValue = std::string;
 
 // -----------------------------
