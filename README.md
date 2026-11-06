@@ -6,6 +6,18 @@ Visit [PyVCD on GitHub](https://github.com/SanDisk-Open-Source/pyvcd/).
 
 It writes Value Change Dump (VCD) files as specified in IEEE 1364-2005.
 
+## Requirements
+
+A C++20 compiler with `std::format` support (GCC 13+, Clang 17+ with libc++, MSVC 19.29+ / Visual Studio 2019 16.10+).
+The library has no third-party dependencies; GoogleTest is fetched only to build the unit tests.
+
+## Versions
+
+Every commit on `master` that passes CI is tagged automatically as `vMAJOR.MINOR.PATCH`
+by [github-tag-action](https://github.com/mathieudutour/github-tag-action): the patch number is bumped
+by default, `feat:` commits bump the minor number and `BREAKING CHANGE` bumps the major one.
+Use a tag instead of `master` in `GIT_TAG` to pin a version.
+
 ## Install with CMake
 Create a `CMakeLists.txt` file on the root directory of your project and use the `CPMAddPackage` command to include this library in your project.
 Here's an example of a CMakeLists.txt file:
@@ -42,14 +54,14 @@ target_link_libraries(mainApp PRIVATE vcdwriter::vcdwriter_shared)
 # install gtests (ubuntu)
 sudo apt-get install libgtest-dev
 
-# compile library and tests
+# compile library and tests (requires g++ >= 13 for <format>)
 make
 
 # run simple test
-./test/main
+./build/main
 
 # run unit tests
-./test/test
+./build/test
 ```
 
 Default result:
@@ -61,6 +73,14 @@ build/main              # simple test execution file
 build/test              # unit tests  execution file
 ```
 
+
+## Run tests with sanitizers
+
+```
+cmake -B build -DCMAKE_BUILD_TYPE=Debug -DVCDWRITER_SANITIZE=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
 
 ## Quick Start
 

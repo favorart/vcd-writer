@@ -252,12 +252,12 @@ TEST_F(VCDWriterFixture, FlushClose)
 
 TEST_F(VCDWriterFixture, SetScopeType)
 {
-    std::string scope = "my_scope";
+    std::string my_scope = "my_scope";
     // Add the scope with a var
-    VarPtr var = writer->register_var(scope, name, VariableType::wire, 1);
+    VarPtr var = writer->register_var(my_scope, name, VariableType::wire, 1);
 
     // Change the scope type to "module"
-    writer->set_scope_type(scope, ScopeType::function);
+    writer->set_scope_type(my_scope, ScopeType::function);
     // Flush the VCDWriter object
     writer->flush();
 

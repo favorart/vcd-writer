@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <format>
+#include <fstream>
+#include <iterator>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
@@ -7,18 +11,10 @@
 #include <memory>
 #include <set>
 #include <utility>
-#include <fmt/base.h>
-#include <fmt/core.h>
-#include <fmt/os.h>
-
-#ifdef _MSC_VER
-#pragma warning (disable : 4996)
-#endif
 
 namespace vcd {
 namespace utils {
 // -----------------------------
-std::string format(const char *fmt, ...);
 std::string now();
 bool validate_date(const std::string&);
 }
@@ -143,7 +139,7 @@ public:
     void dump_on(TimeStamp timestamp)
     {
         if (!_dumping && !_registering && _vars_prevs.size())
-            _ofile.print("#{:d}\n", timestamp);
+            _print("#{:d}\n", timestamp);
         _dump_values("$dumpon");
         _dumping = true;
     }
@@ -158,7 +154,7 @@ public:
         if (_registering)
             _finalize_registration();
         if (timestamp != nullptr && *timestamp > _timestamp)
-            _ofile.print("#{:d}\n", *timestamp);
+            _print("#{:d}\n", *timestamp);
         _ofile.flush();
     }
     // Close VCD writer. Any buffered VCD data is flushed to the output file.
@@ -198,6 +194,10 @@ protected:
     void _write_header();
     //! Turn to dumping phase, no more variables regestration allowed
     void _finalize_registration();
+    //! Format and write to the output file
+    template <class... Args>
+    void _print(std::format_string<Args...> fmt, Args&&... args)
+    { std::format_to(std::ostreambuf_iterator<char>(_ofile), fmt, std::forward<Args>(args)...); }
 
 private:
     TimeStamp _timestamp;
@@ -207,7 +207,7 @@ private:
     std::string _scope_sep;
     ScopeType   _scope_def_type{};
     std::string _filename;
-    fmt::ostream _ofile;
+    std::ofstream _ofile;
 
     std::set<ScopePtr, ScopePtrHash> _scopes;
     std::unordered_set<VarPtr, VarPtrHash, VarPtrEqual> _vars;

@@ -4,7 +4,6 @@ on:
   push:
     branches: [ "master" ]
   pull_request:
-    branches: [ "master" ]
 
 jobs:
   build-and-test:
@@ -12,17 +11,13 @@ jobs:
 
     strategy:
       # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations.
-      # Consider changing this to true when your workflow is stable.
       fail-fast: false
 
-      # Set up a matrix to run the following 3 configurations:
+      # Configurations (std::format requires GCC >= 13, Clang/libc++ >= 17, MSVC >= 19.29):
       # 1. Windows, Release, latest MSVC
-      # 2. Linux, Release, latest GCC
-      # 3. Macos, Release, latest Clang
+      # 2. Linux, Release, default GCC of ubuntu-latest
+      # 3. Macos, Release, latest Apple Clang
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-        build_type: [Release]
-        c_compiler: [gcc, clang, cl]
         include:
           - os: windows-latest
             c_compiler: cl
@@ -33,66 +28,89 @@ jobs:
           - os: macos-latest
             c_compiler: clang
             cpp_compiler: clang++
-        exclude:
-          - os: windows-latest
-            c_compiler: gcc
-          - os: windows-latest
-            c_compiler: clang
-          - os: ubuntu-latest
-            c_compiler: cl
-          - os: ubuntu-latest
-            c_compiler: clang
-          - os: macos-latest
-            c_compiler: gcc
-          - os: macos-latest
-            c_compiler: cl
+
+    env:
+      BUILD_TYPE: Release
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs.
-      # These step outputs can be used throughout the workflow file.
       id: strings
       shell: bash
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
     - name: Configure CMake
-      # Configure CMake in a 'build' subdirectory
       run: >
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
         -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
         -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
         -S ${{ github.workspace }}
 
     - name: Build all
-      # Build the program and tests with the given configuration.
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ env.BUILD_TYPE }}
 
     - name: Check build complete
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      continue-on-error: true
       shell: bash
-      # Check an existance of the binary files
+      # `find` succeeds even when nothing is found, so check its output
       run: |
-        find . -type f \( -name "*vcdwriter*.a" -o -name "*vcdwriter*.lib" \) -print -quit &&
-        find . -type f \( -name "*vcdwriter*.so" -o -name "*vcdwriter*.dylib" -o -name "*vcdwriter*.dll" \) -print -quit &&
-        find . -type f \( -name "main_exec" -o -name "main_exec.exe" \) -print -quit &&
-        find . -type f \( -name "test_exec" -o -name "test_exec.exe" \) -print -quit
+        test -n "$(find . -maxdepth 1 -type f \( -name "*vcdwriter*.a" -o -name "*vcdwriter*.lib" \) -print -quit)"
+        test -n "$(find . -maxdepth 1 -type f \( -name "*vcdwriter*.so" -o -name "*vcdwriter*.dylib" -o -name "*vcdwriter*.dll" \) -print -quit)"
+        test -n "$(find . -maxdepth 1 -type f \( -name "main_exec" -o -name "main_exec.exe" \) -print -quit)"
+        test -n "$(find . -maxdepth 1 -type f \( -name "test_exec" -o -name "test_exec.exe" \) -print -quit)"
 
     - name: Run the single test
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      continue-on-error: true
-      if: runner.os != 'Windows'
-      # Check the program's base input file output equals the expected output
-      run: >
-        ./main_exec &&
-        diff  dump.vcd  $GITHUB_WORKSPACE/compare.vcd
+      shell: bash
+      # Check the program's base input file output equals the expected output.
+      # Linux only for now: the order of "$dumpvars" depends on the std::unordered_map
+      # implementation, so the golden file matches libstdc++ only.
+      if: runner.os == 'Linux'
+      run: ./main_exec && diff dump.vcd "$GITHUB_WORKSPACE/compare.vcd"
 
     - name: Run all unit-tests
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      # Execute all tests defined by the CMake configuration.
+      run: ctest --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Lower ASLR entropy (ASan is incompatible with vm.mmap_rnd_bits=32)
+      run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+    - name: Configure CMake (ASan + UBSan)
       run: >
-        ctest --build-config ${{ matrix.build_type }}
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=Debug
+        -DVCDWRITER_SANITIZE=ON
+        -S ${{ github.workspace }}
+
+    - name: Build all
+      run: cmake --build ${{ github.workspace }}/build
+
+    - name: Run the single test
+      working-directory: ${{ github.workspace }}/build
+      run: ./main_exec && diff dump.vcd "$GITHUB_WORKSPACE/compare.vcd"
+
+    - name: Run all unit-tests
+      working-directory: ${{ github.workspace }}/build
+      run: ctest --output-on-failure
+
+  # Tag every master commit that passed all checks: vX.Y.Z, patch bump by default,
+  # minor for "feat:" commits, major for "BREAKING CHANGE" (Conventional Commits)
+  tag:
+    needs: [ build-and-test, sanitizers ]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: mathieudutour/github-tag-action@v6.2
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
