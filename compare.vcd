@@ -3,8 +3,6 @@ $date 2024-01-15 19:16:21 $end
 $scope module a $end
 $scope module b $end
 $var integer 8 1 var $end
-$upscope $end
-$scope module b $end
 $scope module c $end
 $var integer 8 0 counter $end
 $upscope $end
@@ -13,8 +11,8 @@ $upscope $end
 $enddefinitions $end
 #0
 $dumpvars
-b00001011 1
 b00001010 0
+b00001011 1
 $end
 #1
 b00001100 0
