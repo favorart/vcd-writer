@@ -54,6 +54,7 @@ jobs:
         -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
         -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        -DVCDWRITER_BUILD_BENCH=ON
         -S ${{ github.workspace }}
 
     - name: Build all

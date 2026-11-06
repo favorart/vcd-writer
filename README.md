@@ -84,6 +84,14 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## Run the benchmark
+
+```
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DVCDWRITER_BUILD_BENCH=ON
+cmake --build build --config Release
+./build/vcd_bench
+```
+
 ## Quick Start
 
 ```C++

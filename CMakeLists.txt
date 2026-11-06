@@ -4,6 +4,7 @@ project(vcdwriter LANGUAGES CXX)
 # Build options
 option(VCDWRITER_BUILD_MAIN "Build the main executable" ON)
 option(VCDWRITER_BUILD_TESTS "Build unit tests" ON)
+option(VCDWRITER_BUILD_BENCH "Build the benchmark" OFF)
 option(VCDWRITER_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer (GCC/Clang)" OFF)
 
 # C++ settings: std::format requires C++20
@@ -103,4 +104,11 @@ if (VCDWRITER_BUILD_TESTS AND EXISTS "${TEST_PATH}/vcd_tests.cpp")
   target_link_libraries(test_exec PRIVATE vcdwriter_static GTest::gtest)
   vcdwriter_setup_target(test_exec)
   add_test(NAME vcdwriter_tests COMMAND test_exec WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+endif()
+
+# Benchmark (optional)
+if (VCDWRITER_BUILD_BENCH)
+  add_executable(vcd_bench "${CMAKE_CURRENT_SOURCE_DIR}/bench/vcd_bench.cpp")
+  target_link_libraries(vcd_bench PRIVATE vcdwriter_static)
+  vcdwriter_setup_target(vcd_bench)
 endif()

@@ -864,6 +864,97 @@ TEST_F(VCDWriterFixture, DestructorCloses)
         "b1 0\n");
 }
 
+// Output larger than the writer's buffer is written completely and in order
+TEST_F(VCDWriterFixture, LargeOutput)
+{
+    VarPtr var = writer->register_var("s", "v", VariableType::wire, 64);
+    std::string expected = HEADER +
+        "$scope module s $end\n"
+        "$var wire 64 0 v $end\n"
+        "$upscope $end\n"
+        "$enddefinitions $end\n"
+        "#0\n"
+        "$dumpvars\n"
+        "b" + std::string(64, 'x') + " 0\n"
+        "$end\n";
+    for (TimeStamp t = 1; t <= 5000; ++t) // ~350 KB
+    {
+        const std::string value(64, (t & 1) ? '1' : '0');
+        EXPECT_TRUE(writer->change(var, t, value));
+        expected += "#" + std::to_string(t) + "\nb" + value + " 0\n";
+    }
+    EXPECT_EQ(contents(), expected);
+}
+
+// The buffered output reaches the file on flush()
+TEST_F(VCDWriterFixture, FlushWritesBufferedOutput)
+{
+    VarPtr var = writer->register_var("s", "v", VariableType::wire, 1);
+    writer->change(var, 1, "1");
+    TimeStamp ts = 2;
+    writer->flush(&ts);
+    EXPECT_EQ(read_file(filename), HEADER +
+        "$scope module s $end\n"
+        "$var wire 1 0 v $end\n"
+        "$upscope $end\n"
+        "$enddefinitions $end\n"
+        "#0\n"
+        "$dumpvars\n"
+        "bx 0\n"
+        "$end\n"
+        "#1\n"
+        "b1 0\n"
+        "#2\n");
+}
+
+// Deduplication keeps working while the value buffers are reused between vars
+TEST_F(VCDWriterFixture, ValueBuffersReuse)
+{
+    VarPtr a = writer->register_var("s", "a", VariableType::wire, 4);
+    VarPtr b = writer->register_var("s", "b", VariableType::wire, 4);
+    EXPECT_TRUE(writer->change(a, 1, "1010"));
+    EXPECT_TRUE(writer->change(b, 1, "0101"));
+    EXPECT_FALSE(writer->change(a, 2, "1010"));
+    EXPECT_FALSE(writer->change(b, 2, "0101"));
+    EXPECT_TRUE(writer->change(a, 3, "0101"));
+    EXPECT_TRUE(writer->change(b, 3, "1010"));
+    EXPECT_FALSE(writer->change(a, 4, "101"));   // left-extended to "0101"
+    EXPECT_THROW(writer->change(b, 4, "10a0"), VCDTypeException);
+    EXPECT_FALSE(writer->change(b, 4, "1010"));  // a failed change does not alter the value
+    EXPECT_FALSE(writer->change("s", "a", 5, "0101"));
+    EXPECT_TRUE(writer->change("s", "b", 5, "1111"));
+    EXPECT_EQ(contents(), HEADER +
+        "$scope module s $end\n"
+        "$var wire 4 0 a $end\n"
+        "$var wire 4 1 b $end\n"
+        "$upscope $end\n"
+        "$enddefinitions $end\n"
+        "#0\n"
+        "$dumpvars\n"
+        "bxxxx 0\n"
+        "bxxxx 1\n"
+        "$end\n"
+        "#1\n"
+        "b1010 0\n"
+        "b0101 1\n"
+        "#3\n"
+        "b0101 0\n"
+        "b1010 1\n"
+        "#5\n"
+        "b1111 1\n");
+}
+
+// Characters are checked as ASCII, independently of the C locale
+TEST_F(VCDWriterFixture, NonAsciiValues)
+{
+    EXPECT_THROW(writer->register_var("s", "v\xC3\xA9", VariableType::wire, 1), VCDTypeException);
+    VarPtr str = writer->register_var("s", "str", VariableType::string, 0, "a");
+    VarPtr vec = writer->register_var("s", "vec", VariableType::wire, 2);
+    EXPECT_THROW(writer->change(str, 1, "\xC3\xA9"), VCDTypeException);
+    EXPECT_THROW(writer->change(vec, 1, "\xD8" "1"), VCDTypeException);
+    EXPECT_TRUE(writer->change(vec, 1, "XZ"));
+}
+
 // -----------------------------
 
 int main(int argc, char **argv)

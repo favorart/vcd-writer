@@ -121,8 +121,8 @@ public:
     // Return:  *true* if new_value is dumped into VCD file,
     //         *false* if new_value is not changed from priveios *timestamp* for a given var
     // Events are never deduplicated: every call triggers the event.
-    bool change(VarPtr var, TimeStamp timestamp, const VarValue &value)
-    { return _change(std::move(var), timestamp, value); }
+    bool change(const VarPtr &var, TimeStamp timestamp, const VarValue &value)
+    { return _change(var, timestamp, value); }
 
     bool change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value);
 
@@ -171,10 +171,26 @@ protected:
     void _write_header();
     //! Turn to dumping phase, no more variables regestration allowed
     void _finalize_registration();
-    //! Format and write to the output file
+    //! Format into the output buffer
     template <class... Args>
     void _print(std::format_string<Args...> fmt, Args&&... args)
-    { std::format_to(std::ostreambuf_iterator<char>(_ofile), fmt, std::forward<Args>(args)...); }
+    {
+        std::format_to(std::back_inserter(_buf), fmt, std::forward<Args>(args)...);
+        _write_buf_if_full();
+    }
+    //! Append "<value><ident in hex>\n" into the output buffer (hot path, no std::format)
+    void _print_change(const VarValue &value, unsigned ident);
+    //! Write the output buffer into the file when it is large enough
+    void _write_buf_if_full()
+    {
+        if (_buf.size() >= buf_limit)
+            _write_buf();
+    }
+    void _write_buf();
+    //! Find a registered var (throws VCDPhaseException), reuses a key buffer
+    const VarPtr& _find_var(const std::string &scope, const std::string &name);
+
+    static constexpr size_t buf_limit = 64 * 1024;
 
 private:
     TimeStamp _timestamp;
@@ -199,6 +215,11 @@ private:
 
     // registered vars and their last dumped values, indexed by var ident
     std::vector<std::pair<VarPtr, VarValue>> _values;
+
+    // reusable buffers: no memory allocation per change in a steady state
+    std::string _buf;     // formatted output not written to the file yet
+    VarValue    _record;  // change record of the current change
+    std::string _key;     // lookup key of change(scope, name)
 };
 
 // -----------------------------
