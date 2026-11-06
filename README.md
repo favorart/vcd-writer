@@ -17,6 +17,8 @@ Every commit on `master` that passes CI is tagged automatically as `vMAJOR.MINOR
 by [github-tag-action](https://github.com/mathieudutour/github-tag-action): the patch number is bumped
 by default, `feat:` commits bump the minor number and `BREAKING CHANGE` bumps the major one.
 Use a tag instead of `master` in `GIT_TAG` to pin a version.
+Each tag gets a [GitHub Release](https://github.com/favorart/vcd-writer/releases) with prebuilt Release binaries
+(header, static and shared libraries) for Linux, Windows and macOS.
 
 ## Install with CMake
 Create a `CMakeLists.txt` file on the root directory of your project and use the `CPMAddPackage` command to include this library in your project.
