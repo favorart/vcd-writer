@@ -72,10 +72,8 @@ jobs:
     - name: Run the single test
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       shell: bash
-      # Check the program's base input file output equals the expected output.
-      # Linux only for now: the order of "$dumpvars" depends on the std::unordered_map
-      # implementation, so the golden file matches libstdc++ only.
-      if: runner.os == 'Linux'
+      # Check the program's base input file output equals the expected output
+      # (the output is identical on every platform: "\n" line endings, values ordered by ident)
       run: ./main_exec && diff dump.vcd "$GITHUB_WORKSPACE/compare.vcd"
 
     - name: Run all unit-tests

@@ -1,7 +1,9 @@
 #include <array>
 #include <cstring>
 #include <string>
+#include <mutex>
 #include <ctime>
+#include <utility>
 
 
 
@@ -9,13 +11,20 @@ namespace vcd::utils {
 // -----------------------------
 std::string now()
 {
-    std::time_t rawtime = 0;
-    struct tm *timeinfo = nullptr;
+    // std::localtime returns a pointer to a shared static object
+    static std::mutex localtime_mutex;
+    const std::time_t rawtime = std::time(nullptr);
+    std::tm timeinfo{};
+    {
+        std::lock_guard<std::mutex> lock(localtime_mutex);
+        const std::tm *tm = std::localtime(&rawtime);
+        if (tm == nullptr)
+            return {};
+        timeinfo = *tm;
+    }
     std::array<char, 80> buffer{};
-    std::time(&rawtime);
-    timeinfo = std::localtime(&rawtime);
-    std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", timeinfo);
-    return {buffer.data(), std::strlen(buffer.data())};
+    const size_t n = std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    return {buffer.data(), n};
 }
 
 // -----------------------------
@@ -26,24 +35,23 @@ bool validate_date([[maybe_unused]]const std::string &date)
 }
 
 // -----------------------------
+// Replace every line break ("\n", "\r" or "\r\n") by *sub*
 void replace_new_lines(std::string &str, const std::string &sub)
 {
-    bool nl = false;
-    int k = 0;
-    for (auto j = 0u; j < str.size(); ++j)
+    std::string res;
+    res.reserve(str.size());
+    for (size_t j = 0; j < str.size(); ++j)
     {
-        if (str[j] == '\n' || str[j] == '\r')
+        if (str[j] == '\r' || str[j] == '\n')
         {
-            if (!nl) // new_lines may be 2-chars length
-            { for (auto c : sub) str[k++] = c; }
-            nl = !nl;
+            if (str[j] == '\r' && j + 1 < str.size() && str[j + 1] == '\n')
+                ++j; // "\r\n" is a single line break
+            res += sub;
         }
         else
-        {
-            nl = false;
-            str[k++] = str[j];
-        }
+            res += str[j];
     }
+    str = std::move(res);
 }
 
 // -----------------------------

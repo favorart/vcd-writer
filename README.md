@@ -114,8 +114,6 @@ for (int timestamp = 0; timestamp < 5; ++timestamp)
 	$scope module a $end
 	$scope module b $end
 	$var integer 8 1 var $end
-	$upscope $end
-	$scope module b $end
 	$scope module c $end
 	$var integer 8 0 counter $end
 	$upscope $end
