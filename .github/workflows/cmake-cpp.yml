@@ -4,6 +4,12 @@ on:
   push:
     branches: [ "master" ]
   pull_request:
+    # every PR, whatever its base branch (stacked PRs target feature branches, not only master)
+    branches: [ "**" ]
+
+# least privilege for GITHUB_TOKEN; jobs that need more ask for it explicitly
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
@@ -76,6 +82,31 @@ jobs:
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       run: ctest --build-config ${{ env.BUILD_TYPE }} --output-on-failure
 
+    # Release binaries of a merged (master) commit: header + static/shared libraries.
+    # They are published by the "release" job only if every job passed and a tag was created.
+    - name: Pack Release binaries
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      working-directory: ${{ steps.strings.outputs.build-output-dir }}
+      shell: bash
+      run: |
+        mkdir -p pkg/include pkg/lib
+        cp "$GITHUB_WORKSPACE/include/vcd_writer.h" pkg/include/
+        cp "$GITHUB_WORKSPACE/LICENSE" "$GITHUB_WORKSPACE/README.md" pkg/
+        for lib in *vcdwriter*.a *vcdwriter*.lib *vcdwriter*.so *vcdwriter*.dylib *vcdwriter*.dll; do
+          if [ -f "$lib" ]; then cp "$lib" pkg/lib/; fi
+        done
+        test -n "$(ls pkg/lib)"
+        tar -czf "vcdwriter-${{ runner.os }}-${{ runner.arch }}.tar.gz" -C pkg .
+
+    - name: Upload Release binaries
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      uses: actions/upload-artifact@v4
+      with:
+        name: vcdwriter-${{ runner.os }}
+        path: ${{ steps.strings.outputs.build-output-dir }}/vcdwriter-*.tar.gz
+        if-no-files-found: error
+        retention-days: 1
+
   sanitizers:
     runs-on: ubuntu-latest
     steps:
@@ -110,7 +141,31 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      new_tag: ${{ steps.tag.outputs.new_tag }}
     steps:
-    - uses: mathieudutour/github-tag-action@v6.2
+    - id: tag
+      uses: mathieudutour/github-tag-action@v6.2
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  # GitHub Release for the new tag with the Release binaries built and tested above
+  release:
+    needs: tag
+    if: needs.tag.outputs.new_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: vcdwriter-*
+        merge-multiple: true
+
+    - uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ needs.tag.outputs.new_tag }}
+        name: ${{ needs.tag.outputs.new_tag }}
+        generate_release_notes: true
+        files: vcdwriter-*.tar.gz
+        fail_on_unmatched_files: true

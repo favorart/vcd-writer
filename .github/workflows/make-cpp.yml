@@ -4,6 +4,12 @@ on:
   push:
     branches: [ "master" ]
   pull_request:
+    # every PR, whatever its base branch (stacked PRs target feature branches, not only master)
+    branches: [ "**" ]
+
+# least privilege for GITHUB_TOKEN; jobs that need more ask for it explicitly
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
