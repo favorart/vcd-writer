@@ -1,17 +1,23 @@
 name: Make C/C++ CI
 
 on:
-  #push:
-  #  branches: [ "master" ]
-  #pull_request:
-  #  branches: [ "master" ]
+  push:
+    branches: [ "master" ]
+  pull_request:
+    # every PR, whatever its base branch (stacked PRs target feature branches, not only master)
+    branches: [ "**" ]
+
+# least privilege for GITHUB_TOKEN; jobs that need more ask for it explicitly
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
+    # the default g++ of ubuntu-latest (>= 13) supports <format> (C++20)
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: Bacondish2023/setup-googletest@v1
       with:
         tag: v1.14.0
@@ -19,8 +25,12 @@ jobs:
     - name: make
       run: make
     - name: build complete
-      run: pushd build && [ -f "libvcdwriter.so" ] && [ -f "libvcdwriter.a" ] && [ -f "main" ] && [ -f "test" ]
+      run: |
+        test -f build/libvcdwriter.so
+        test -f build/libvcdwriter.a
+        test -f build/main
+        test -f build/test
     - name: single test
-      run: ./build/main   &&   diff  compare.vcd  dump.vcd
+      run: ./build/main && diff compare.vcd dump.vcd
     - name: unit tests
       run: ./build/test

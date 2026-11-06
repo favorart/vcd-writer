@@ -4,7 +4,12 @@ on:
   push:
     branches: [ "master" ]
   pull_request:
-    branches: [ "master" ]
+    # every PR, whatever its base branch (stacked PRs target feature branches, not only master)
+    branches: [ "**" ]
+
+# least privilege for GITHUB_TOKEN; jobs that need more ask for it explicitly
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
@@ -12,17 +17,13 @@ jobs:
 
     strategy:
       # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations.
-      # Consider changing this to true when your workflow is stable.
       fail-fast: false
 
-      # Set up a matrix to run the following 3 configurations:
+      # Configurations (std::format requires GCC >= 13, Clang/libc++ >= 17, MSVC >= 19.29):
       # 1. Windows, Release, latest MSVC
-      # 2. Linux, Release, latest GCC
-      # 3. Macos, Release, latest Clang
+      # 2. Linux, Release, default GCC of ubuntu-latest
+      # 3. Macos, Release, latest Apple Clang
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-        build_type: [Release]
-        c_compiler: [gcc, clang, cl]
         include:
           - os: windows-latest
             c_compiler: cl
@@ -33,66 +34,138 @@ jobs:
           - os: macos-latest
             c_compiler: clang
             cpp_compiler: clang++
-        exclude:
-          - os: windows-latest
-            c_compiler: gcc
-          - os: windows-latest
-            c_compiler: clang
-          - os: ubuntu-latest
-            c_compiler: cl
-          - os: ubuntu-latest
-            c_compiler: clang
-          - os: macos-latest
-            c_compiler: gcc
-          - os: macos-latest
-            c_compiler: cl
+
+    env:
+      BUILD_TYPE: Release
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs.
-      # These step outputs can be used throughout the workflow file.
       id: strings
       shell: bash
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
     - name: Configure CMake
-      # Configure CMake in a 'build' subdirectory
       run: >
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
         -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
         -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
         -S ${{ github.workspace }}
 
     - name: Build all
-      # Build the program and tests with the given configuration.
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ env.BUILD_TYPE }}
 
     - name: Check build complete
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      continue-on-error: true
       shell: bash
-      # Check an existance of the binary files
+      # `find` succeeds even when nothing is found, so check its output
       run: |
-        find . -type f \( -name "*vcdwriter*.a" -o -name "*vcdwriter*.lib" \) -print -quit &&
-        find . -type f \( -name "*vcdwriter*.so" -o -name "*vcdwriter*.dylib" -o -name "*vcdwriter*.dll" \) -print -quit &&
-        find . -type f \( -name "main_exec" -o -name "main_exec.exe" \) -print -quit &&
-        find . -type f \( -name "test_exec" -o -name "test_exec.exe" \) -print -quit
+        test -n "$(find . -maxdepth 1 -type f \( -name "*vcdwriter*.a" -o -name "*vcdwriter*.lib" \) -print -quit)"
+        test -n "$(find . -maxdepth 1 -type f \( -name "*vcdwriter*.so" -o -name "*vcdwriter*.dylib" -o -name "*vcdwriter*.dll" \) -print -quit)"
+        test -n "$(find . -maxdepth 1 -type f \( -name "main_exec" -o -name "main_exec.exe" \) -print -quit)"
+        test -n "$(find . -maxdepth 1 -type f \( -name "test_exec" -o -name "test_exec.exe" \) -print -quit)"
 
     - name: Run the single test
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      continue-on-error: true
-      if: runner.os != 'Windows'
-      # Check the program's base input file output equals the expected output
-      run: >
-        ./main_exec &&
-        diff  dump.vcd  $GITHUB_WORKSPACE/compare.vcd
+      shell: bash
+      # Check the program's base input file output equals the expected output.
+      # Linux only for now: the order of "$dumpvars" depends on the std::unordered_map
+      # implementation, so the golden file matches libstdc++ only.
+      if: runner.os == 'Linux'
+      run: ./main_exec && diff dump.vcd "$GITHUB_WORKSPACE/compare.vcd"
 
     - name: Run all unit-tests
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      # Execute all tests defined by the CMake configuration.
+      run: ctest --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+
+    # Release binaries of a merged (master) commit: header + static/shared libraries.
+    # They are published by the "release" job only if every job passed and a tag was created.
+    - name: Pack Release binaries
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      working-directory: ${{ steps.strings.outputs.build-output-dir }}
+      shell: bash
+      run: |
+        mkdir -p pkg/include pkg/lib
+        cp "$GITHUB_WORKSPACE/include/vcd_writer.h" pkg/include/
+        cp "$GITHUB_WORKSPACE/LICENSE" "$GITHUB_WORKSPACE/README.md" pkg/
+        for lib in *vcdwriter*.a *vcdwriter*.lib *vcdwriter*.so *vcdwriter*.dylib *vcdwriter*.dll; do
+          if [ -f "$lib" ]; then cp "$lib" pkg/lib/; fi
+        done
+        test -n "$(ls pkg/lib)"
+        tar -czf "vcdwriter-${{ runner.os }}-${{ runner.arch }}.tar.gz" -C pkg .
+
+    - name: Upload Release binaries
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      uses: actions/upload-artifact@v4
+      with:
+        name: vcdwriter-${{ runner.os }}
+        path: ${{ steps.strings.outputs.build-output-dir }}/vcdwriter-*.tar.gz
+        if-no-files-found: error
+        retention-days: 1
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Lower ASLR entropy (ASan is incompatible with vm.mmap_rnd_bits=32)
+      run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+    - name: Configure CMake (ASan + UBSan)
       run: >
-        ctest --build-config ${{ matrix.build_type }}
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=Debug
+        -DVCDWRITER_SANITIZE=ON
+        -S ${{ github.workspace }}
+
+    - name: Build all
+      run: cmake --build ${{ github.workspace }}/build
+
+    - name: Run the single test
+      working-directory: ${{ github.workspace }}/build
+      run: ./main_exec && diff dump.vcd "$GITHUB_WORKSPACE/compare.vcd"
+
+    - name: Run all unit-tests
+      working-directory: ${{ github.workspace }}/build
+      run: ctest --output-on-failure
+
+  # Tag every master commit that passed all checks: vX.Y.Z, patch bump by default,
+  # minor for "feat:" commits, major for "BREAKING CHANGE" (Conventional Commits)
+  tag:
+    needs: [ build-and-test, sanitizers ]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_tag: ${{ steps.tag.outputs.new_tag }}
+    steps:
+    - id: tag
+      uses: mathieudutour/github-tag-action@v6.2
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  # GitHub Release for the new tag with the Release binaries built and tested above
+  release:
+    needs: tag
+    if: needs.tag.outputs.new_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: vcdwriter-*
+        merge-multiple: true
+
+    - uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ needs.tag.outputs.new_tag }}
+        name: ${{ needs.tag.outputs.new_tag }}
+        generate_release_notes: true
+        files: vcdwriter-*.tar.gz
+        fail_on_unmatched_files: true

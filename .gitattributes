@@ -1,0 +1,2 @@
+# the writer emits LF line endings on every platform
+*.vcd text eol=lf
