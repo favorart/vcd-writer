@@ -28,15 +28,15 @@ unsigned size_of(VariableType type, unsigned size, const std::string &name)
     case VariableType::event:    return 1;
     default:
         if (!size)
-            throw VCDTypeException{ std::format("Must supply size for type '{}' of var '{}'",
+            throw TypeException{ std::format("Must supply size for type '{}' of var '{}'",
                                                 VAR_TYPES[size_t(type)], name) };
         return size;
     }
 }
 
-VCDVariable::Kind kind_of(VariableType type, unsigned size)
+Variable::Kind kind_of(VariableType type, unsigned size)
 {
-    using Kind = VCDVariable::Kind;
+    using Kind = Variable::Kind;
     switch (type)
     {
     case VariableType::integer:
@@ -51,7 +51,7 @@ VCDVariable::Kind kind_of(VariableType type, unsigned size)
 }
 
 // -----------------------------
-VCDVariable::VCDVariable(std::string var_name, VariableType var_type, unsigned var_size, unsigned var_ident) :
+Variable::Variable(std::string var_name, VariableType var_type, unsigned var_size, unsigned var_ident) :
     name(std::move(var_name)),
     type(var_type),
     size(size_of(var_type, var_size, name)),
@@ -60,22 +60,22 @@ VCDVariable::VCDVariable(std::string var_name, VariableType var_type, unsigned v
 {}
 
 // -----------------------------
-std::string VCDVariable::declaration() const
+std::string Variable::declaration() const
 {
     return std::format("$var {} {} {:x} {} $end", VAR_TYPES[size_t(type)], size, ident, name);
 }
 
 // -----------------------------
-void VCDVariable::change_record(const VarValue &value, VarValue &record) const
+void Variable::change_record(const VarValue &value, VarValue &record) const
 {
     switch (kind)
     {
     case Kind::scalar:
     case Kind::event:
     {   // "<bit>", an empty value is 'x'
-        const char c = value.empty() ? char(UNDEF) : to_lower(value[0]);
+        const char c = value.empty() ? char(Bit::undef) : to_lower(value[0]);
         if (value.size() > 1 || !is_bit(c))
-            throw VCDTypeException{ std::format("Invalid scalar value '{}'", value) };
+            throw TypeException{ std::format("Invalid scalar value '{}'", value) };
         record.assign(1, c);
         return;
     }
@@ -83,9 +83,9 @@ void VCDVariable::change_record(const VarValue &value, VarValue &record) const
     {   // "b<size bits> ", an empty value is all 'x'; a shorter value is left-extended
         // with 'x'/'z' if its leftmost bit is 'x'/'z', with '0' otherwise (IEEE 1364-2005, 18.2.1)
         if (value.size() > size)
-            throw VCDTypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, size) };
-        const char first = value.empty() ? char(UNDEF) : to_lower(value[0]);
-        const char fill = (first == UNDEF || first == HIGHV) ? first : char(ZERO);
+            throw TypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, size) };
+        const char first = value.empty() ? char(Bit::undef) : to_lower(value[0]);
+        const char fill = (first == Bit::undef || first == Bit::highz) ? first : char(Bit::zero);
         record.resize(size_t(size) + 2);
         char *p = record.data();
         *p++ = 'b';
@@ -94,7 +94,7 @@ void VCDVariable::change_record(const VarValue &value, VarValue &record) const
         {
             const char c = to_lower(ch);
             if (!is_bit(c))
-                throw VCDTypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, size) };
+                throw TypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, size) };
             *p++ = c;
         }
         *p = ' ';
@@ -107,7 +107,7 @@ void VCDVariable::change_record(const VarValue &value, VarValue &record) const
         try { d = std::stod(value, &idx); }
         catch (const std::exception&) { idx = 0; }
         if (idx == 0 || idx != value.size())
-            throw VCDTypeException{ std::format("Invalid real value '{}'", value) };
+            throw TypeException{ std::format("Invalid real value '{}'", value) };
         record.clear();
         std::format_to(std::back_inserter(record), "r{:.16g} ", d);
         return;
@@ -115,7 +115,7 @@ void VCDVariable::change_record(const VarValue &value, VarValue &record) const
     case Kind::string:
     {   // "s<string> " (GTKWave extension), non-empty, without whitespace
         if (value.empty() || !std::all_of(value.begin(), value.end(), is_graph))
-            throw VCDTypeException{ std::format("Invalid string value '{}'", value) };
+            throw TypeException{ std::format("Invalid string value '{}'", value) };
         record.assign(1, 's');
         record += value;
         record += ' ';

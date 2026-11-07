@@ -11,7 +11,7 @@ namespace vcd::utils {
 // Locale-independent ASCII checks (std::tolower/isgraph depend on the C locale and are slower)
 constexpr char to_lower(char c) { return (c >= 'A' && c <= 'Z') ? char(c - 'A' + 'a') : c; }
 constexpr bool is_graph(char c) { return c > ' ' && c < '\x7f'; }
-constexpr bool is_bit(char c) { return c == ONE || c == ZERO || c == UNDEF || c == HIGHV; }
+constexpr bool is_bit(char c) { return c == Bit::one || c == Bit::zero || c == Bit::undef || c == Bit::highz; }
 
 // Non-empty, printable, without whitespace and does not look like a keyword ("$end", "$var", ...)
 bool is_valid_token(const std::string &s);

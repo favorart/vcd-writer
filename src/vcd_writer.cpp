@@ -22,12 +22,12 @@ constexpr std::array<const char*, size_t(ScopeType::_count_)> SCOPE_TYPES{ "begi
 
 // -----------------------------
 // State of a writer and its helpers
-struct VCDWriter::Impl
+struct Writer::Impl
 {
     struct Scope
     {
         ScopeType type;
-        std::vector<const VCDVariable*> vars;
+        std::vector<const Variable*> vars;
     };
 
     Impl(const std::string &filename, HeadPtr head, TimeStamp init_timestamp);
@@ -57,9 +57,9 @@ struct VCDWriter::Impl
     std::string key;     // lookup key of change(scope, name)
     static constexpr size_t buf_limit = 64 * 1024;
 
-    // throws VCDPhaseException after close()
+    // throws PhaseException after close()
     void check_open(const char *what) const;
-    // registered variable (throws VCDPhaseException)
+    // registered variable (throws PhaseException)
     const VarPtr& find_var(const std::string &scope, const std::string &name, std::string &var_key) const;
     // move the current time to *ts*, the header is written on the first move
     void advance(TimeStamp ts);
@@ -85,38 +85,38 @@ struct VCDWriter::Impl
 };
 
 // -----------------------------
-VCDWriter::Impl::Impl(const std::string &filename, HeadPtr head, TimeStamp init_timestamp) :
+Writer::Impl::Impl(const std::string &filename, HeadPtr head, TimeStamp init_timestamp) :
     file(filename, std::ios::out | std::ios::trunc | std::ios::binary),
-    header(head ? std::move(head) : makeVCDHeader()),
+    header(head ? std::move(head) : make_header()),
     timestamp(init_timestamp)
 {
     if (!file)
-        throw VCDException{ std::format("Cannot open file '{}'", filename) };
+        throw Exception{ std::format("Cannot open file '{}'", filename) };
     file.exceptions(std::ios::badbit | std::ios::failbit); // report write errors as exceptions
 }
 
 // -----------------------------
-void VCDWriter::Impl::check_open(const char *what) const
+void Writer::Impl::check_open(const char *what) const
 {
     if (closed)
-        throw VCDPhaseException{ std::format("Cannot {} after close()", what) };
+        throw PhaseException{ std::format("Cannot {} after close()", what) };
 }
 
 // -----------------------------
-const VarPtr& VCDWriter::Impl::find_var(const std::string &scope, const std::string &name, std::string &var_key) const
+const VarPtr& Writer::Impl::find_var(const std::string &scope, const std::string &name, std::string &var_key) const
 {
     make_var_key(var_key, scope, name);
     const auto it = vars.find(var_key);
     if (it == vars.end())
-        throw VCDPhaseException{ std::format("The var '{}' in scope '{}' does not exist", name, scope) };
+        throw PhaseException{ std::format("The var '{}' in scope '{}' does not exist", name, scope) };
     return it->second;
 }
 
 // -----------------------------
-void VCDWriter::Impl::advance(TimeStamp ts)
+void Writer::Impl::advance(TimeStamp ts)
 {
     if (ts < timestamp)
-        throw VCDPhaseException{ std::format("Out of order timestamp {} < {}", ts, timestamp) };
+        throw PhaseException{ std::format("Out of order timestamp {} < {}", ts, timestamp) };
     if (ts == timestamp)
         return;
     if (registering)
@@ -126,7 +126,7 @@ void VCDWriter::Impl::advance(TimeStamp ts)
 }
 
 // -----------------------------
-void VCDWriter::Impl::set_dumping(bool on, TimeStamp ts)
+void Writer::Impl::set_dumping(bool on, TimeStamp ts)
 {
     check_open(on ? "dump_on()" : "dump_off()");
     if (registering && ts == timestamp)
@@ -147,14 +147,14 @@ void VCDWriter::Impl::set_dumping(bool on, TimeStamp ts)
 
 // -----------------------------
 template <class... Args>
-void VCDWriter::Impl::print(std::format_string<Args...> fmt, Args&&... args)
+void Writer::Impl::print(std::format_string<Args...> fmt, Args&&... args)
 {
     std::format_to(std::back_inserter(buf), fmt, std::forward<Args>(args)...);
     write_buf_if_full();
 }
 
 // -----------------------------
-void VCDWriter::Impl::print_change(const VarValue &value, unsigned ident)
+void Writer::Impl::print_change(const VarValue &value, unsigned ident)
 {
     buf += value;
     append_number(buf, ident, 16);
@@ -163,7 +163,7 @@ void VCDWriter::Impl::print_change(const VarValue &value, unsigned ident)
 }
 
 // -----------------------------
-void VCDWriter::Impl::print_timestamp()
+void Writer::Impl::print_timestamp()
 {
     if (timestamp_printed)
         return;
@@ -175,7 +175,7 @@ void VCDWriter::Impl::print_timestamp()
 }
 
 // -----------------------------
-void VCDWriter::Impl::write_buf()
+void Writer::Impl::write_buf()
 {
     // the buffer is cleared even on a write error: the error is reported once
     std::string out;
@@ -186,35 +186,35 @@ void VCDWriter::Impl::write_buf()
 }
 
 // -----------------------------
-void VCDWriter::Impl::dump_values(const char *keyword)
+void Writer::Impl::dump_values(const char *keyword)
 {
     print("{}\n", keyword);
     for (const auto &var : idents)
-        if (var->kind != VCDVariable::Kind::event)
+        if (var->kind != Variable::Kind::event)
             print_change(values[var->ident], var->ident);
     print("$end\n");
 }
 
 // -----------------------------
-void VCDWriter::Impl::dump_off_values()
+void Writer::Impl::dump_off_values()
 {
     print("$dumpoff\n");
     for (const auto &var : idents)
     {
-        if (var->kind == VCDVariable::Kind::scalar)
+        if (var->kind == Variable::Kind::scalar)
             print("x{:x}\n", var->ident);
-        else if (var->kind == VCDVariable::Kind::vector)
+        else if (var->kind == Variable::Kind::vector)
             print("bx {:x}\n", var->ident);
     }
     print("$end\n");
 }
 
 // -----------------------------
-void VCDWriter::Impl::write_header()
+void Writer::Impl::write_header()
 {
     for (size_t i = 0; i < header->values.size(); ++i)
         if (!header->values[i].empty())
-            print("{} {} $end\n", VCDHeader::keywords[i], indent_lines(header->values[i]));
+            print("{} {} $end\n", Header::keywords[i], indent_lines(header->values[i]));
     header.reset();
 
     // sort scopes by their hierarchical path, so a scope is followed by its children
@@ -249,7 +249,7 @@ void VCDWriter::Impl::write_header()
 }
 
 // -----------------------------
-void VCDWriter::Impl::finalize_registration()
+void Writer::Impl::finalize_registration()
 {
     write_header();
     registering = false;
@@ -262,42 +262,42 @@ void VCDWriter::Impl::finalize_registration()
 }
 
 // -----------------------------
-VCDWriter::VCDWriter(std::string filename, HeadPtr &&header, TimeStamp init_timestamp) :
+Writer::Writer(std::string filename, HeadPtr &&header, TimeStamp init_timestamp) :
     _impl(std::make_unique<Impl>(filename, std::move(header), init_timestamp))
 {}
 
 // -----------------------------
-VCDWriter::~VCDWriter()
+Writer::~Writer()
 {
     try { close(); }
     catch (...) {} // destructor must not throw
 }
 
 // -----------------------------
-VarPtr VCDWriter::register_var(const std::string &scope, const std::string &name, VariableType type,
+VarPtr Writer::register_var(const std::string &scope, const std::string &name, VariableType type,
                                unsigned size, const VarValue &init)
 {
     auto &d = *_impl;
     d.check_open("register a variable");
     if (!d.registering)
-        throw VCDPhaseException{ std::format("Cannot register new var '{}', registering finished", name) };
+        throw PhaseException{ std::format("Cannot register new var '{}', registering finished", name) };
     if (!is_valid_token(name))
-        throw VCDTypeException{ std::format("Invalid var name '{}'", name) };
+        throw TypeException{ std::format("Invalid var name '{}'", name) };
     for (const auto &part : split(scope, d.scope_sep))
         if (!is_valid_token(part))
-            throw VCDTypeException{ std::format("Invalid scope '{}'", scope) };
+            throw TypeException{ std::format("Invalid scope '{}'", scope) };
 
     std::string var_key;
     make_var_key(var_key, scope, name);
     if (d.vars.find(var_key) != d.vars.end())
-        throw VCDTypeException{ std::format("Duplicate var '{}' in scope '{}'", name, scope) };
+        throw TypeException{ std::format("Duplicate var '{}' in scope '{}'", name, scope) };
 
-    auto var = std::make_shared<VCDVariable>(name, type, size, unsigned(d.idents.size()));
+    auto var = std::make_shared<Variable>(name, type, size, unsigned(d.idents.size()));
     // events have no value, other vars validate the initial value ("x" of a real is 0)
     VarValue init_record;
-    if (var->kind == VCDVariable::Kind::real && init == VarValue{ UNDEF })
+    if (var->kind == Variable::Kind::real && init == VarValue{ Bit::undef })
         var->change_record("0.0", init_record);
-    else if (var->kind != VCDVariable::Kind::event)
+    else if (var->kind != Variable::Kind::event)
         var->change_record(init, init_record);
 
     // only alter the state after all checks succeeded
@@ -309,21 +309,21 @@ VarPtr VCDWriter::register_var(const std::string &scope, const std::string &name
 }
 
 // -----------------------------
-bool VCDWriter::change(const VarPtr &var, TimeStamp timestamp, const VarValue &value)
+bool Writer::change(const VarPtr &var, TimeStamp timestamp, const VarValue &value)
 {
     auto &d = *_impl;
     if (!var)
-        throw VCDTypeException{ "Invalid VCDVariable" };
+        throw TypeException{ "Invalid Variable" };
     d.check_open("change a value");
     if (timestamp < d.timestamp)
-        throw VCDPhaseException{ std::format("Out of order value change var '{}'", var->name) };
+        throw PhaseException{ std::format("Out of order value change var '{}'", var->name) };
     if (var->ident >= d.idents.size() || d.idents[var->ident] != var)
-        throw VCDTypeException{ std::format("VCDVariable '{}' do not registered", var->name) };
+        throw TypeException{ std::format("Variable '{}' do not registered", var->name) };
 
     var->change_record(value, d.record); // validate before any state change
     d.advance(timestamp);
 
-    if (var->kind == VCDVariable::Kind::event)
+    if (var->kind == Variable::Kind::event)
     {   // events are not values: every change triggers the event
         if (d.registering)
             d.finalize_registration();
@@ -350,17 +350,17 @@ bool VCDWriter::change(const VarPtr &var, TimeStamp timestamp, const VarValue &v
 }
 
 // -----------------------------
-bool VCDWriter::change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value)
+bool Writer::change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value)
 {
     return change(_impl->find_var(scope, name, _impl->key), timestamp, value);
 }
 
 // -----------------------------
-void VCDWriter::dump_off(TimeStamp timestamp) { _impl->set_dumping(false, timestamp); }
-void VCDWriter::dump_on(TimeStamp timestamp) { _impl->set_dumping(true, timestamp); }
+void Writer::dump_off(TimeStamp timestamp) { _impl->set_dumping(false, timestamp); }
+void Writer::dump_on(TimeStamp timestamp) { _impl->set_dumping(true, timestamp); }
 
 // -----------------------------
-void VCDWriter::flush(const TimeStamp *timestamp)
+void Writer::flush(const TimeStamp *timestamp)
 {
     auto &d = *_impl;
     d.check_open("flush()");
@@ -377,7 +377,7 @@ void VCDWriter::flush(const TimeStamp *timestamp)
 }
 
 // -----------------------------
-void VCDWriter::close(const TimeStamp *timestamp)
+void Writer::close(const TimeStamp *timestamp)
 {
     auto &d = *_impl;
     if (d.closed)
@@ -397,26 +397,26 @@ void VCDWriter::close(const TimeStamp *timestamp)
 }
 
 // -----------------------------
-void VCDWriter::set_scope_type(const std::string &scope, ScopeType type)
+void Writer::set_scope_type(const std::string &scope, ScopeType type)
 {
     const auto it = _impl->scopes.find(scope);
     if (it == _impl->scopes.end())
-        throw VCDPhaseException{ std::format("Such scope '{}' does not exist", scope) };
+        throw PhaseException{ std::format("Such scope '{}' does not exist", scope) };
     it->second.type = type;
 }
 
 // -----------------------------
-void VCDWriter::set_scope_default_type(ScopeType type) { _impl->scope_def_type = type; }
+void Writer::set_scope_default_type(ScopeType type) { _impl->scope_def_type = type; }
 
 // -----------------------------
-void VCDWriter::set_scope_sep(const std::string &scope_sep)
+void Writer::set_scope_sep(const std::string &scope_sep)
 {
     if (!scope_sep.empty())
         _impl->scope_sep = scope_sep;
 }
 
 // -----------------------------
-VarPtr VCDWriter::var(const std::string &scope, const std::string &name) const
+VarPtr Writer::var(const std::string &scope, const std::string &name) const
 {
     std::string var_key;
     return _impl->find_var(scope, name, var_key);
