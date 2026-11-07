@@ -1,11 +1,13 @@
+#include "vcd_utils.h"
+
+#include <algorithm>
 #include <array>
-#include <cstring>
-#include <string>
-#include <mutex>
+#include <charconv>
+#include <chrono>
 #include <ctime>
-#include <utility>
-
-
+#include <iterator>
+#include <limits>
+#include <mutex>
 
 namespace vcd::utils {
 // -----------------------------
@@ -22,39 +24,87 @@ std::string now()
             return {};
         timeinfo = *tm;
     }
-    std::array<char, 80> buffer{};
+    std::array<char, DATE_FORMAT.size() + 1> buffer{}; // + the terminating '\0'
     const size_t n = std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &timeinfo);
-    return {buffer.data(), n};
+    return { buffer.data(), n };
 }
 
 // -----------------------------
-bool validate_date([[maybe_unused]]const std::string &date)
+bool validate_date(const std::string &date)
 {
-    // TODO: validate format
-    return true;
+    using namespace std::chrono;
+    if (date.size() != DATE_FORMAT.size())
+        return false;
+    for (size_t i = 0; i < DATE_FORMAT.size(); ++i)
+    {
+        const bool digit = (date[i] >= '0' && date[i] <= '9');
+        const bool sep = (DATE_FORMAT[i] == '-' || DATE_FORMAT[i] == ' ' || DATE_FORMAT[i] == ':');
+        if (sep ? date[i] != DATE_FORMAT[i] : !digit)
+            return false;
+    }
+    // the value of the *field* ("YYYY", "MM", ...) of the format
+    auto value = [&date](std::string_view field) {
+        return std::stoi(date.substr(DATE_FORMAT.find(field), field.size()));
+    };
+    const year_month_day ymd{ year{ value("YYYY") }, month{ unsigned(value("MM")) }, day{ unsigned(value("DD")) } };
+    return ymd.ok()
+        && hours{ value("hh") } < days{ 1 }
+        && minutes{ value("mm") } < hours{ 1 }
+        && seconds{ value("ss") } <= minutes{ 1 }; // a leap second is 60
 }
 
 // -----------------------------
-// Replace every line break ("\n", "\r" or "\r\n") by *sub*
-void replace_new_lines(std::string &str, const std::string &sub)
+bool is_valid_token(const std::string &s)
+{
+    return !s.empty() && s[0] != '$' && std::all_of(s.begin(), s.end(), is_graph);
+}
+
+// -----------------------------
+std::vector<std::string> split(const std::string &s, const std::string &sep)
+{
+    std::vector<std::string> parts;
+    for (size_t beg = 0;;)
+    {
+        const size_t end = s.find(sep, beg);
+        parts.push_back(s.substr(beg, end - beg));
+        if (end == std::string::npos)
+            return parts;
+        beg = end + sep.size();
+    }
+}
+
+// -----------------------------
+void make_var_key(std::string &key, const std::string &scope, const std::string &name)
+{
+    key.assign(scope);
+    key += '\0';
+    key += name;
+}
+
+// -----------------------------
+void append_number(std::string &out, uint64_t value, int base)
+{
+    char digits[std::numeric_limits<uint64_t>::digits]; // the longest one is in base 2
+    const auto res = std::to_chars(std::begin(digits), std::end(digits), value, base);
+    out.append(digits, res.ptr);
+}
+
+// -----------------------------
+std::string indent_lines(const std::string &str)
 {
     std::string res;
     res.reserve(str.size());
-    for (size_t j = 0; j < str.size(); ++j)
+    for (size_t i = 0; i < str.size(); ++i)
     {
-        if (str[j] == '\r' || str[j] == '\n')
+        if (str[i] == '\r' || str[i] == '\n')
         {
-            if (str[j] == '\r' && j + 1 < str.size() && str[j + 1] == '\n')
-                ++j; // "\r\n" is a single line break
-            res += sub;
+            if (str[i] == '\r' && i + 1 < str.size() && str[i + 1] == '\n')
+                ++i; // "\r\n" is a single line break
+            res += "\n\t";
         }
         else
-            res += str[j];
+            res += str[i];
     }
-    str = std::move(res);
+    return res;
 }
-
-// -----------------------------
 }
-
-   
