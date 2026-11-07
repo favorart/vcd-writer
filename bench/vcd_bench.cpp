@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 
     // every var changes on every step
     measure("change(VarPtr) all changed", size_t(2) * VARS * STEPS, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
+        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2026-01-01 00:00:00");
         VCDWriter w(file, head);
         std::vector<VarPtr> vec, sc;
         register_all(w, vec, sc);
@@ -81,7 +81,7 @@ int main(int argc, char **argv)
 
     // values do not change: only validation + deduplication, nothing is written
     measure("change(VarPtr) unchanged", size_t(2) * VARS * STEPS, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
+        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2026-01-01 00:00:00");
         VCDWriter w(file, head);
         std::vector<VarPtr> vec, sc;
         register_all(w, vec, sc);
@@ -95,7 +95,7 @@ int main(int argc, char **argv)
 
     // short values are left-extended
     measure("change(VarPtr) short values", size_t(VARS) * STEPS, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
+        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2026-01-01 00:00:00");
         VCDWriter w(file, head);
         std::vector<VarPtr> vec, sc;
         register_all(w, vec, sc);
@@ -112,7 +112,7 @@ int main(int argc, char **argv)
         names[i] = "v" + std::to_string(i);
     }
     measure("change(scope, name)", size_t(VARS) * STEPS, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
+        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2026-01-01 00:00:00");
         VCDWriter w(file, head);
         std::vector<VarPtr> vec, sc;
         register_all(w, vec, sc);
@@ -124,7 +124,7 @@ int main(int argc, char **argv)
     // registration of many vars + header
     constexpr unsigned REG = 100000;
     measure("register_var + header", REG, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
+        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2026-01-01 00:00:00");
         VCDWriter w(file, head);
         for (unsigned i = 0; i < REG; ++i)
             w.register_var("top.a" + std::to_string(i % 100) + ".b" + std::to_string(i % 7),

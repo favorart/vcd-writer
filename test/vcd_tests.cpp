@@ -32,7 +32,7 @@ static const std::string HEADER = "$timescale 1 ns $end\n"
 // Test case for invalid timescale quan
 TEST(VCDHeaderTest, TimeScaleQuanInvalid)
 {
-    EXPECT_THROW(makeVCDHeader(TimeScale::_COUNT_), VCDTypeException);
+    EXPECT_THROW(makeVCDHeader(TimeScale::_count_), VCDTypeException);
     EXPECT_THROW(makeVCDHeader(TimeScale(5)), VCDTypeException);
     EXPECT_THROW(makeVCDHeader(TimeScale(0)), VCDTypeException);
 }
@@ -50,6 +50,20 @@ TEST(VCDHeaderTest, EndKeywordInjection)
     EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2024 $end"), VCDTypeException);
     EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "", "x $end $var"), VCDTypeException);
     EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "", "", "$end"), VCDTypeException);
+}
+
+// The date is "YYYY-MM-DD hh:mm:ss" with a valid calendar date and time, or empty
+TEST(VCDHeaderTest, DateFormat)
+{
+    for (const char *date : { "", "2024-05-21 22:16:16", "2024-02-29 00:00:00", "1999-12-31 23:59:60" })
+        EXPECT_NO_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, date)) << date;
+    EXPECT_NO_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns)); // utils::now()
+    for (const char *date : { "today", "2024-05-21", "2024-05-21T22:16:16", "2024-05-21 22:16:16 ",
+                              "2024/05/21 22:16:16", "2024-5-21 22:16:16", "2024-05-21 2a:16:16",
+                              "2024-13-01 00:00:00", "2024-00-10 00:00:00", "2023-02-29 00:00:00",
+                              "2024-04-31 00:00:00", "2024-05-21 24:00:00", "2024-05-21 23:60:00",
+                              "2024-05-21 23:59:61", "+024-05-21 22:16:16" })
+        EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, date), VCDTypeException) << date;
 }
 
 // Regression: multi-line comments used to overflow the heap buffer
