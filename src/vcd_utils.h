@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "vcd_writer.h"
@@ -21,7 +22,9 @@ std::vector<std::string> split(const std::string &s, const std::string &sep);
 void make_var_key(std::string &key, const std::string &scope, const std::string &name);
 // Append the unsigned *value* in the given base (lowercase, same as "{:d}"/"{:x}")
 void append_number(std::string &out, uint64_t value, int base);
-// "YYYY-MM-DD hh:mm:ss" with a valid calendar date and time
+// Format of a header date, the same as utils::now() writes
+constexpr std::string_view DATE_FORMAT = "YYYY-MM-DD hh:mm:ss";
+// DATE_FORMAT with a valid calendar date and time
 bool validate_date(const std::string &date);
 // Every line break ("\n", "\r" or "\r\n") becomes "\n\t"
 std::string indent_lines(const std::string &str);

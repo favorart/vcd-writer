@@ -27,11 +27,15 @@ HeadPtr make_header(TimeScale timescale_quan, TimeScaleUnit timescale_unit, cons
     if (timescale_unit < TimeScaleUnit::s || timescale_unit >= TimeScaleUnit::_count_)
         throw TypeException{ std::format("Invalid time scale unit {}", int(timescale_unit)) };
     if (!date.empty() && !utils::validate_date(date))
-        throw TypeException{ std::format("Invalid date '{}', expected 'YYYY-MM-DD hh:mm:ss'", date) };
+        throw TypeException{ std::format("Invalid date '{}', expected '{}'", date, utils::DATE_FORMAT) };
     check_no_end(comment, "comment");
     check_no_end(version, "version");
 
-    auto timescale = std::to_string(int(timescale_quan)) + " " + TIMESCALE_UNITS[size_t(timescale_unit)];
-    return HeadPtr{ new Header{ { std::move(timescale), date, comment, version } } };
+    HeadPtr head{ new Header };
+    head->values[Header::timescale] = std::to_string(int(timescale_quan)) + " " + TIMESCALE_UNITS[size_t(timescale_unit)];
+    head->values[Header::date] = date;
+    head->values[Header::comment] = comment;
+    head->values[Header::version] = version;
+    return head;
 }
 }

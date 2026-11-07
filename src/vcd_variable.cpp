@@ -15,6 +15,16 @@ constexpr std::array<const char*, size_t(VariableType::_count_)> VAR_TYPES{
     "wire", "reg", "string", "parameter", "integer", "real", "realtime", "time", "event",
     "supply0", "supply1", "tri", "triand", "trior", "trireg", "tri0", "tri1", "wand", "wor" };
 
+constexpr unsigned WORD_SIZE = 64;    // default size of integer, time, real, realtime
+constexpr unsigned SCALAR_SIZE = 1;   // size of a scalar, an event; default size of a string
+constexpr int REAL_PRECISION = 16;    // significant digits of a real value
+
+// change records: "<bit>", "b<bits> ", "r<number> ", "s<string> "
+constexpr char VECTOR_PREFIX = 'b';
+constexpr char REAL_PREFIX = 'r';
+constexpr char STRING_PREFIX = 's';
+constexpr char RECORD_SUFFIX = ' ';
+
 // *size* or the default size of *type*
 unsigned size_of(VariableType type, unsigned size, const std::string &name)
 {
@@ -23,9 +33,9 @@ unsigned size_of(VariableType type, unsigned size, const std::string &name)
     case VariableType::integer:
     case VariableType::time:
     case VariableType::real:
-    case VariableType::realtime: return size ? size : 64;
-    case VariableType::string:   return size ? size : 1;
-    case VariableType::event:    return 1;
+    case VariableType::realtime: return size ? size : WORD_SIZE;
+    case VariableType::string:   return size ? size : SCALAR_SIZE;
+    case VariableType::event:    return SCALAR_SIZE;
     default:
         if (!size)
             throw TypeException{ std::format("Must supply size for type '{}' of var '{}'",
@@ -40,7 +50,7 @@ Variable::Kind kind_of(VariableType type, unsigned size)
     switch (type)
     {
     case VariableType::integer:
-    case VariableType::time:     return (size == 1) ? Kind::scalar : Kind::vector;
+    case VariableType::time:     return (size == SCALAR_SIZE) ? Kind::scalar : Kind::vector;
     case VariableType::real:
     case VariableType::realtime: return Kind::real;
     case VariableType::string:   return Kind::string;
@@ -74,9 +84,9 @@ void Variable::change_record(const VarValue &value, VarValue &record) const
     case Kind::event:
     {   // "<bit>", an empty value is 'x'
         const char c = value.empty() ? char(Bit::undef) : to_lower(value[0]);
-        if (value.size() > 1 || !is_bit(c))
+        if (value.size() > SCALAR_SIZE || !is_bit(c))
             throw TypeException{ std::format("Invalid scalar value '{}'", value) };
-        record.assign(1, c);
+        record = c;
         return;
     }
     case Kind::vector:
@@ -86,9 +96,9 @@ void Variable::change_record(const VarValue &value, VarValue &record) const
             throw TypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, size) };
         const char first = value.empty() ? char(Bit::undef) : to_lower(value[0]);
         const char fill = (first == Bit::undef || first == Bit::highz) ? first : char(Bit::zero);
-        record.resize(size_t(size) + 2);
+        record.resize(sizeof(VECTOR_PREFIX) + size + sizeof(RECORD_SUFFIX));
         char *p = record.data();
-        *p++ = 'b';
+        *p++ = VECTOR_PREFIX;
         p = std::fill_n(p, size - value.size(), fill);
         for (const char ch : value)
         {
@@ -97,7 +107,7 @@ void Variable::change_record(const VarValue &value, VarValue &record) const
                 throw TypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, size) };
             *p++ = c;
         }
-        *p = ' ';
+        *p = RECORD_SUFFIX;
         return;
     }
     case Kind::real:
@@ -109,16 +119,16 @@ void Variable::change_record(const VarValue &value, VarValue &record) const
         if (idx == 0 || idx != value.size())
             throw TypeException{ std::format("Invalid real value '{}'", value) };
         record.clear();
-        std::format_to(std::back_inserter(record), "r{:.16g} ", d);
+        std::format_to(std::back_inserter(record), "{}{:.{}g}{}", REAL_PREFIX, d, REAL_PRECISION, RECORD_SUFFIX);
         return;
     }
     case Kind::string:
     {   // "s<string> " (GTKWave extension), non-empty, without whitespace
         if (value.empty() || !std::all_of(value.begin(), value.end(), is_graph))
             throw TypeException{ std::format("Invalid string value '{}'", value) };
-        record.assign(1, 's');
+        record = STRING_PREFIX;
         record += value;
-        record += ' ';
+        record += RECORD_SUFFIX;
         return;
     }
     }

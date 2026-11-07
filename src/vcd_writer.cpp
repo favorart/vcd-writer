@@ -18,6 +18,8 @@ using namespace utils;
 
 namespace {
 constexpr std::array<const char*, size_t(ScopeType::_count_)> SCOPE_TYPES{ "begin", "fork", "function", "module", "task" };
+constexpr int TIMESTAMP_BASE = 10;  // "#<timestamp>" is decimal
+constexpr int IDENT_BASE = 16;      // identifiers are hexadecimal, the same as in "$var"
 }
 
 // -----------------------------
@@ -157,7 +159,7 @@ void Writer::Impl::print(std::format_string<Args...> fmt, Args&&... args)
 void Writer::Impl::print_change(const VarValue &value, unsigned ident)
 {
     buf += value;
-    append_number(buf, ident, 16);
+    append_number(buf, ident, IDENT_BASE);
     buf += '\n';
     write_buf_if_full();
 }
@@ -168,7 +170,7 @@ void Writer::Impl::print_timestamp()
     if (timestamp_printed)
         return;
     buf += '#';
-    append_number(buf, timestamp, 10);
+    append_number(buf, timestamp, TIMESTAMP_BASE);
     buf += '\n';
     timestamp_printed = true;
     write_buf_if_full();
