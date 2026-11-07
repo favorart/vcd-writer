@@ -66,8 +66,8 @@ private:
     }
     [[nodiscard]] static const std::string& checked_date(const std::string &date)
     {
-        if (!utils::validate_date(date))
-            throw TypeException{ std::format("Invalid date '{}' format", date) };
+        if (!date.empty() && !utils::validate_date(date))
+            throw TypeException{ std::format("Invalid date '{}', expected 'YYYY-MM-DD hh:mm:ss'", date) };
         return checked(date, "date");
     }
 };

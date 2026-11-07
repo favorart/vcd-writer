@@ -52,6 +52,20 @@ TEST(HeaderTest, EndKeywordInjection)
     EXPECT_THROW(make_header(TimeScale::one, TimeScaleUnit::ns, "", "", "$end"), TypeException);
 }
 
+// The date is "YYYY-MM-DD hh:mm:ss" with a valid calendar date and time, or empty
+TEST(HeaderTest, DateFormat)
+{
+    for (const char *date : { "", "2024-05-21 22:16:16", "2024-02-29 00:00:00", "1999-12-31 23:59:60" })
+        EXPECT_NO_THROW(make_header(TimeScale::one, TimeScaleUnit::ns, date)) << date;
+    EXPECT_NO_THROW(make_header(TimeScale::one, TimeScaleUnit::ns)); // utils::now()
+    for (const char *date : { "today", "2024-05-21", "2024-05-21T22:16:16", "2024-05-21 22:16:16 ",
+                              "2024/05/21 22:16:16", "2024-5-21 22:16:16", "2024-05-21 2a:16:16",
+                              "2024-13-01 00:00:00", "2024-00-10 00:00:00", "2023-02-29 00:00:00",
+                              "2024-04-31 00:00:00", "2024-05-21 24:00:00", "2024-05-21 23:60:00",
+                              "2024-05-21 23:59:61", "+024-05-21 22:16:16" })
+        EXPECT_THROW(make_header(TimeScale::one, TimeScaleUnit::ns, date), TypeException) << date;
+}
+
 // Regression: multi-line comments used to overflow the heap buffer
 TEST(HeaderTest, MultiLineComment)
 {
