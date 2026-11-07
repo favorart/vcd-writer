@@ -1,10 +1,7 @@
 #include <string>
-#include <cstdlib>
-#include <cstring>
 #include <cassert>
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <iterator>
 #include <format>
 #include <fstream>
@@ -14,76 +11,12 @@
 #include <utility>
 #include <vector>
 #include "vcd_writer.h"
+#include "vcd_utils.h"
 
 
 // -----------------------------
 namespace vcd {
-namespace utils {
-void replace_new_lines(std::string &str, const std::string &sub);
-}
 using namespace utils;
-
-namespace {
-// -----------------------------
-// Locale-independent ASCII helpers (std::tolower/isgraph depend on the C locale and are slower)
-constexpr char to_lower(char c) { return (c >= 'A' && c <= 'Z') ? char(c - 'A' + 'a') : c; }
-constexpr bool is_graph(char c) { return c > ' ' && c < '\x7f'; }
-
-// -----------------------------
-// VCD tokens are separated by whitespace, so identifiers must not contain any,
-// and must not look like a keyword ("$end", "$var", ...)
-bool is_valid_token(const std::string &s)
-{
-    if (s.empty() || s[0] == '$')
-        return false;
-    return std::all_of(s.begin(), s.end(), is_graph);
-}
-
-// -----------------------------
-std::vector<std::string> split(const std::string &s, const std::string &sep)
-{
-    std::vector<std::string> parts;
-    size_t beg = 0;
-    while (true)
-    {
-        const size_t end = s.find(sep, beg);
-        if (end == std::string::npos)
-        {
-            parts.push_back(s.substr(beg));
-            break;
-        }
-        parts.push_back(s.substr(beg, end - beg));
-        beg = end + sep.size();
-    }
-    return parts;
-}
-
-// -----------------------------
-void make_var_key(std::string &key, const std::string &scope, const std::string &name)
-{
-    key.clear();
-    key += scope;
-    key += '\0';
-    key += name;
-}
-
-std::string var_key(const std::string &scope, const std::string &name)
-{
-    std::string key;
-    key.reserve(scope.size() + name.size() + 1);
-    make_var_key(key, scope, name);
-    return key;
-}
-
-// -----------------------------
-// Append the unsigned *value* in the given base (lowercase, same as "{:d}"/"{:x}")
-void append_number(std::string &out, uint64_t value, int base)
-{
-    char digits[64];
-    const auto res = std::to_chars(std::begin(digits), std::end(digits), value, base);
-    out.append(digits, res.ptr);
-}
-} // namespace
 
 // -----------------------------
 struct Header final
@@ -376,7 +309,8 @@ VarPtr Writer::register_var(const std::string &scope, const std::string &name, V
         if (!is_valid_token(part))
             throw TypeException{ std::format("Invalid scope '{}'", scope) };
 
-    auto key = var_key(scope, name);
+    std::string key;
+    make_var_key(key, scope, name);
     if (duplicate_names_check && d.vars.find(key) != d.vars.end())
         throw TypeException{ std::format("Duplicate var '{}' in scope '{}'", name, scope) };
 
@@ -552,7 +486,9 @@ const VarPtr& Writer::Impl::find_var(const std::string &scope, const std::string
 // -----------------------------
 VarPtr Writer::var(const std::string &scope, const std::string &name) const
 {
-    auto it_var = _impl->vars.find(var_key(scope, name));
+    std::string key;
+    make_var_key(key, scope, name);
+    auto it_var = _impl->vars.find(key);
     if (it_var == _impl->vars.end())
         throw PhaseException{ std::format("The var '{}' in scope '{}' does not exist", name, scope) };
     return it_var->second;
@@ -701,12 +637,10 @@ void Writer::Impl::write_header()
 {
     for (int i = 0; i < Header::KW_COUNT_; ++i)
     {
-        auto kwname = Header::kw_names[i];
-        auto kwvalue = header->kw_values[i];
+        const auto &kwvalue = header->kw_values[i];
         if (kwvalue.empty())
             continue;
-        replace_new_lines(kwvalue, "\n\t");
-        print("{:s} {:s} $end\n", kwname, kwvalue);
+        print("{:s} {:s} $end\n", Header::kw_names[i], indent_lines(kwvalue));
     }
 
     // sort scopes by their hierarchical path, so a scope is followed by its children
