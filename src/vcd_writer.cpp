@@ -13,6 +13,7 @@
 #include "vcd_writer.h"
 #include "vcd_header.h"
 #include "vcd_utils.h"
+#include "vcd_variable.h"
 
 
 // -----------------------------
@@ -32,119 +33,6 @@ struct Scope final
 
     Scope(std::string_view name, ScopeType type) :
         name(name), type(type) {}
-};
-
-// -----------------------------
-// VCD variable details needed to call :meth:`Writer.change()`.
-class Variable
-{
-public:
-    Variable() = delete;
-    Variable(Variable&&) = delete;
-    Variable& operator=(Variable&&) = delete;
-    Variable(const Variable&) = delete;
-    Variable& operator=(const Variable&) = delete;
-
-protected:
-    Variable(std::string name, VariableType type, unsigned size, unsigned ident) :
-        _ident(ident), _type(type), _name(std::move(name)), _size(size) {}
-
-    unsigned     _ident;  // internal ID used in VCD output stream
-    VariableType _type;   // VCD variable type, one of `VariableTypes`
-    std::string  _name;   // human-readable name
-    unsigned     _size;   // size of variable, in bits
-
-    //! string representation of variable types
-    static const std::array<const char*, 19> VAR_TYPES;
-    static_assert(int(VariableType::wor) + 1 == 19, "VAR_TYPES must match VariableType");
-
-public:
-    virtual ~Variable() = default;
-
-    //! string representation of variable declartion in VCD
-    [[nodiscard]] std::string declartion() const;
-    //! string representation of value change record in VCD, written into *record*
-    //! (a reused buffer: no memory allocation once its capacity is enough;
-    //!  its contents are unspecified if the value is invalid and an exception is thrown)
-    virtual void change_record(const VarValue &value, VarValue &record) const = 0;
-
-    friend class Writer;
-};
-
-// -----------------------------
-const std::array<const char*, 19> Variable::VAR_TYPES = {
-    "wire", "reg", "string", "parameter", "integer", "real", "realtime", "time", "event",
-    "supply0", "supply1", "tri", "triand", "trior", "trireg", "tri0", "tri1", "wand", "wor"
-};
-
-// -----------------------------
-// One-bit VCD scalar is a 4-state variable and thus may have one of
-// `Bit`. An empty *value* is the same as `Bit::undef`
-struct ScalarVariable : public Variable
-{
-    ScalarVariable(const std::string &name, VariableType type, unsigned size, unsigned ident) :
-        Variable(name, type, size, ident) {}
-    void change_record(const VarValue &value, VarValue &record) const override
-    {
-        char c = Bit::undef;
-        if (!value.empty())
-        {
-            c = to_lower(value[0]);
-            if (value.size() != 1 || (c != Bit::one   && c != Bit::zero
-                                   && c != Bit::undef && c != Bit::highz))
-                throw TypeException{ std::format("Invalid scalar value '{}'", value) };
-        }
-        record.assign(1, c);
-    }
-};
-
-// -----------------------------
-// String variable as known by GTKWave. Any `string` (character-chain)
-// can be displayed as a change.This type is only supported by GTKWave.
-// The value must be non-empty and must not contain whitespace or control characters.
-struct StringVariable : public Variable
-{
-    StringVariable(const std::string &name, VariableType type, unsigned size, unsigned ident) :
-        Variable(name, type, size, ident) {}
-    void change_record(const VarValue &value, VarValue &record) const override
-    {
-        if (value.empty() || !std::all_of(value.begin(), value.end(), is_graph))
-            throw TypeException{ std::format("Invalid string value '{}'", value) };
-        record.clear();
-        record += 's';
-        record += value;
-        record += ' ';
-    }
-};
-
-// -----------------------------
-// Real (IEEE-754 double-precision floating point) variable. Values must
-// be numeric and can't be `Bit::undef` or `Bit::highz` states
-struct RealVariable : public Variable
-{
-    RealVariable(const std::string &name, VariableType type, unsigned size, unsigned ident) :
-        Variable(name, type, size, ident) {}
-    void change_record(const VarValue &value, VarValue &record) const override
-    {
-        double d = 0.0;
-        size_t idx = 0;
-        try { d = std::stod(value, &idx); }
-        catch (const std::exception&) { idx = 0; }
-        if (idx == 0 || idx != value.size())
-            throw TypeException{ std::format("Invalid real value '{}'", value) };
-        record.clear();
-        std::format_to(std::back_inserter(record), "r{:.16g} ", d);
-    }
-};
-
-// -----------------------------
-// Bit vector variable type for the various non-scalar and non-real
-// variable types, including integer, register, wire, etc.
-struct VectorVariable : public Variable
-{
-    VectorVariable(const std::string &name, VariableType type, unsigned size, unsigned ident) :
-        Variable(name, type, size, ident) {}
-    void change_record(const VarValue &value, VarValue &record) const override;
 };
 
 // -----------------------------
@@ -251,47 +139,13 @@ VarPtr Writer::register_var(const std::string &scope, const std::string &name, V
     if (duplicate_names_check && d.vars.find(key) != d.vars.end())
         throw TypeException{ std::format("Duplicate var '{}' in scope '{}'", name, scope) };
 
-    const auto ident = static_cast<unsigned>(d.values.size());
-    auto sz = [&size](unsigned def) { return (size ? size : def);  };
-
-    VarPtr pvar;
-    VarValue init_value(init);
-    switch (type)
-    {
-        case VariableType::integer:
-        case VariableType::time:
-            if (sz(64) == 1)
-                pvar = VarPtr(new ScalarVariable(name, type, 1, ident));
-            else
-                pvar = VarPtr(new VectorVariable(name, type, sz(64), ident));
-            break;
-
-        case VariableType::real:
-        case VariableType::realtime:
-            pvar = VarPtr(new RealVariable(name, type, sz(64), ident));
-            if (init_value.size() == 1 && init_value[0] == Bit::undef)
-                init_value = "0.0";
-            break;
-
-        case VariableType::string:
-            pvar = VarPtr(new StringVariable(name, type, sz(1), ident));
-            break;
-
-        case VariableType::event:
-            pvar = VarPtr(new ScalarVariable(name, type, 1, ident));
-            break;
-
-        default:
-            if (!size)
-                throw TypeException{ std::format("Must supply size for type '{}' of var '{}'",
-                                               Variable::VAR_TYPES[int(type)], name) };
-            pvar = VarPtr(new VectorVariable(name, type, size, ident));
-            break;
-    }
-    // events have no value, other vars validate the initial value
+    auto pvar = std::make_shared<Variable>(name, type, size, unsigned(d.values.size()));
+    // events have no value, other vars validate the initial value ("x" of a real is 0)
     VarValue record;
-    if (type != VariableType::event)
-        pvar->change_record(init_value, record);
+    if (pvar->kind == Variable::Kind::real && init == VarValue{ Bit::undef })
+        pvar->change_record("0.0", record);
+    else if (pvar->kind != Variable::Kind::event)
+        pvar->change_record(init, record);
 
     // Only alter state after all checks succeeded
     auto it_scope = d.scopes.find(scope);
@@ -368,15 +222,15 @@ bool Writer::change(const VarPtr &var, TimeStamp timestamp, const VarValue &valu
     if (d.closed)
         throw PhaseException{ "Cannot change value after close()" };
     if (timestamp < d.timestamp)
-        throw PhaseException{ std::format("Out of order value change var '{}'", var->_name) };
-    if (var->_ident >= d.values.size() || d.values[var->_ident].first != var)
-        throw TypeException{ std::format("Variable '{}' do not registered", var->_name) };
+        throw PhaseException{ std::format("Out of order value change var '{}'", var->name) };
+    if (var->ident >= d.values.size() || d.values[var->ident].first != var)
+        throw TypeException{ std::format("Variable '{}' do not registered", var->name) };
 
     // validate the value before any state change
     var->change_record(value, d.record);
     d.advance(timestamp);
 
-    if (var->_type == VariableType::event)
+    if (var->kind == Variable::Kind::event)
     {
         // events are not values: every change triggers the event
         if (d.registering)
@@ -384,12 +238,12 @@ bool Writer::change(const VarPtr &var, TimeStamp timestamp, const VarValue &valu
         if (d.dumping)
         {
             d.print_timestamp();
-            d.print_change(d.record, var->_ident);
+            d.print_change(d.record, var->ident);
         }
         return true;
     }
 
-    auto &prev = d.values[var->_ident].second;
+    auto &prev = d.values[var->ident].second;
     if (prev == d.record)
         return false;
     // the old value's buffer is reused by the next change
@@ -399,7 +253,7 @@ bool Writer::change(const VarPtr &var, TimeStamp timestamp, const VarValue &valu
     if (d.dumping && !d.registering)
     {
         d.print_timestamp();
-        d.print_change(prev, var->_ident);
+        d.print_change(prev, var->ident);
     }
     return true;
 }
@@ -536,7 +390,7 @@ void Writer::Impl::dump_off()
     print("$dumpoff\n");
     for (const auto &p : values)
     {
-        const auto ident = p.first->_ident;
+        const auto ident = p.first->ident;
         const auto &value = p.second;
 
         if (value.empty() || value[0] == 'r' || value[0] == 's')
@@ -557,7 +411,7 @@ void Writer::Impl::dump_values(const char *keyword)
     {
         if (p.second.empty()) // events have no value
             continue;
-        print_change(p.second, p.first->_ident);
+        print_change(p.second, p.first->ident);
     }
     print("$end\n");
 }
@@ -605,7 +459,7 @@ void Writer::Impl::write_header()
         }
         // dump variable declartion
         for (const auto& var : scope->vars)
-            print("{:s}\n", var->declartion());
+            print("{:s}\n", var->declaration());
     }
     for (size_t i = 0; i < opened.size(); ++i)
         print("$upscope $end\n");
@@ -628,44 +482,6 @@ void Writer::Impl::finalize_registration()
         if (!dumping)
             dump_off();
     }
-}
-
-// -----------------------------
-std::string Variable::declartion() const
-{
-    return std::format("$var {} {} {:x} {} $end", VAR_TYPES[int(_type)], _size, _ident, _name);
-}
-
-// -----------------------------
-//  :Warning: *value* is string where all characters must be one of `Bit`.
-//  An empty  *value* is the same as `Bit::undef`.
-//  A shorter *value* is left-extended: with 'x'/'z' if its leftmost bit is 'x'/'z',
-//  with '0' otherwise (IEEE 1364-2005, 18.2.1).
-void VectorVariable::change_record(const VarValue &value, VarValue &record) const
-{
-    if (value.size() > _size)
-        throw TypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, _size) };
-
-    // "b<_size bits> ", written in place (*record* is a scratch buffer, garbage on throw)
-    record.resize(size_t(_size) + 2);
-    char *p = record.data();
-    *p++ = 'b';
-    if (value.empty())
-        p = std::fill_n(p, _size, char(Bit::undef));
-    else
-    {
-        const char first = to_lower(value[0]);
-        const char fill = (first == Bit::undef || first == Bit::highz) ? first : char(Bit::zero);
-        p = std::fill_n(p, _size - value.size(), fill);
-        for (const char ch : value)
-        {
-            const char c = to_lower(ch);
-            if (c != Bit::one && c != Bit::zero && c != Bit::undef && c != Bit::highz)
-                throw TypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, _size) };
-            *p++ = c;
-        }
-    }
-    *p = ' ';
 }
 
 // -----------------------------
