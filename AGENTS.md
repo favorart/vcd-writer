@@ -11,6 +11,8 @@ Rules for any change to vcd-writer, a C++20 library that writes Value Change Dum
 - GoogleTest is used by the tests only.
 - Character checks are ASCII (no `std::tolower` / `std::isgraph`): VCD identifiers are printable ASCII.
 - Character checks do not depend on the locale set by the host application.
+- No magic numbers or characters: every constant has a name (a `constexpr`, an enumerator, `_count_`).
+- Sizes are derived from what they hold (`_count_`, `.size()` of a named constant, `std::numeric_limits`), not written by hand.
 
 ### Naming
 
