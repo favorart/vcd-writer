@@ -11,76 +11,13 @@
 #include <utility>
 #include <vector>
 #include "vcd_writer.h"
+#include "vcd_header.h"
 #include "vcd_utils.h"
 
 
 // -----------------------------
 namespace vcd {
 using namespace utils;
-
-// -----------------------------
-struct Header final
-{
-    enum KW { KW_TIMESCALE, KW_DATE, KW_COMMENT, KW_VERSION, KW_COUNT_ };
-    static constexpr std::array<const char*, KW_COUNT_> kw_names{ "$timescale", "$date", "$comment", "$version" };
-
-    const TimeScale timescale_quan;
-    const TimeScaleUnit timescale_unit;
-    const std::array<std::string, KW_COUNT_> kw_values;
-
-    Header() = delete;
-    Header(Header&&) = default;
-    Header(const Header&) = delete;
-    Header& operator=(const Header&) = delete;
-    Header& operator=(Header&&) = delete;
-    ~Header() = default;
-    Header(TimeScale     timescale_quan,
-              TimeScaleUnit timescale_unit,
-              const std::string& date,
-              const std::string& comment,
-              const std::string& version) :
-        timescale_quan{ timescale_quan },
-        timescale_unit{ timescale_unit },
-        kw_values{ timescale(timescale_quan, timescale_unit),
-                   checked_date(date),
-                   checked(comment, "comment"),
-                   checked(version, "version") }
-    {}
-
-private:
-    [[nodiscard]] static std::string timescale(TimeScale quan, TimeScaleUnit unit)
-    {
-        if (quan != TimeScale::one && quan != TimeScale::ten && quan != TimeScale::hundred)
-            throw TypeException{ std::format("Invalid time scale quant {}", int(quan)) };
-        if (int(unit) < 0 || unit >= TimeScaleUnit::_count_)
-            throw TypeException{ std::format("Invalid time scale unit {}", int(unit)) };
-
-        const std::array<const char*, int(TimeScaleUnit::_count_)> TIMESCALE_UNITS{ "s", "ms", "us", "ns", "ps", "fs" };
-        return std::to_string(int(quan)) + " " + TIMESCALE_UNITS[int(unit)];
-    }
-    [[nodiscard]] static const std::string& checked(const std::string &value, const char *what)
-    {
-        if (value.find("$end") != std::string::npos)
-            throw TypeException{ std::format("Header {} must not contain '$end'", what) };
-        return value;
-    }
-    [[nodiscard]] static const std::string& checked_date(const std::string &date)
-    {
-        if (!date.empty() && !utils::validate_date(date))
-            throw TypeException{ std::format("Invalid date '{}', expected 'YYYY-MM-DD hh:mm:ss'", date) };
-        return checked(date, "date");
-    }
-};
-
-// -----------------------------
-HeadPtr make_header(TimeScale timescale_quan, TimeScaleUnit timescale_unit, const std::string &date,
-                      const std::string &comment, const std::string &version)
-{
-    return HeadPtr{ new Header(timescale_quan, timescale_unit, date, comment, version) };
-}
-
-// -----------------------------
-void HeaderDeleter::operator()(Header *p) { delete p; }
 
 // -----------------------------
 struct Scope;
@@ -635,13 +572,9 @@ void Writer::Impl::scope_declaration(const std::string &name, ScopeType type)
 // -----------------------------
 void Writer::Impl::write_header()
 {
-    for (int i = 0; i < Header::KW_COUNT_; ++i)
-    {
-        const auto &kwvalue = header->kw_values[i];
-        if (kwvalue.empty())
-            continue;
-        print("{:s} {:s} $end\n", Header::kw_names[i], indent_lines(kwvalue));
-    }
+    for (size_t i = 0; i < header->values.size(); ++i)
+        if (!header->values[i].empty())
+            print("{} {} $end\n", Header::keywords[i], indent_lines(header->values[i]));
 
     // sort scopes by their hierarchical path, so a scope is followed by its children
     std::vector<std::pair<std::vector<std::string>, const Scope*>> sorted;
