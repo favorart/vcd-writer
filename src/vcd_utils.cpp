@@ -6,6 +6,7 @@
 #include <chrono>
 #include <ctime>
 #include <iterator>
+#include <limits>
 #include <mutex>
 
 namespace vcd::utils {
@@ -23,7 +24,7 @@ std::string now()
             return {};
         timeinfo = *tm;
     }
-    std::array<char, 80> buffer{};
+    std::array<char, DATE_FORMAT.size() + 1> buffer{}; // + the terminating '\0'
     const size_t n = std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &timeinfo);
     return { buffer.data(), n };
 }
@@ -31,22 +32,25 @@ std::string now()
 // -----------------------------
 bool validate_date(const std::string &date)
 {
-    // positions of the fields in "YYYY-MM-DD hh:mm:ss"
-    constexpr std::string_view format = "YYYY-MM-DD hh:mm:ss";
-    if (date.size() != format.size())
+    using namespace std::chrono;
+    if (date.size() != DATE_FORMAT.size())
         return false;
-    for (size_t i = 0; i < format.size(); ++i)
+    for (size_t i = 0; i < DATE_FORMAT.size(); ++i)
     {
         const bool digit = (date[i] >= '0' && date[i] <= '9');
-        const bool sep = (format[i] == '-' || format[i] == ' ' || format[i] == ':');
-        if (sep ? date[i] != format[i] : !digit)
+        const bool sep = (DATE_FORMAT[i] == '-' || DATE_FORMAT[i] == ' ' || DATE_FORMAT[i] == ':');
+        if (sep ? date[i] != DATE_FORMAT[i] : !digit)
             return false;
     }
-    auto field = [&date](size_t pos, size_t len) { return std::stoi(date.substr(pos, len)); };
-    const std::chrono::year_month_day ymd{ std::chrono::year{ field(0, 4) },
-                                           std::chrono::month{ unsigned(field(5, 2)) },
-                                           std::chrono::day{ unsigned(field(8, 2)) } };
-    return ymd.ok() && field(11, 2) < 24 && field(14, 2) < 60 && field(17, 2) <= 60; // 60: leap second
+    // the value of the *field* ("YYYY", "MM", ...) of the format
+    auto value = [&date](std::string_view field) {
+        return std::stoi(date.substr(DATE_FORMAT.find(field), field.size()));
+    };
+    const year_month_day ymd{ year{ value("YYYY") }, month{ unsigned(value("MM")) }, day{ unsigned(value("DD")) } };
+    return ymd.ok()
+        && hours{ value("hh") } < days{ 1 }
+        && minutes{ value("mm") } < hours{ 1 }
+        && seconds{ value("ss") } <= minutes{ 1 }; // a leap second is 60
 }
 
 // -----------------------------
@@ -80,7 +84,7 @@ void make_var_key(std::string &key, const std::string &scope, const std::string 
 // -----------------------------
 void append_number(std::string &out, uint64_t value, int base)
 {
-    char digits[64];
+    char digits[std::numeric_limits<uint64_t>::digits]; // the longest one is in base 2
     const auto res = std::to_chars(std::begin(digits), std::end(digits), value, base);
     out.append(digits, res.ptr);
 }
