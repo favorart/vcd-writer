@@ -1,16 +1,10 @@
 #pragma once
 
 #include <cstdint>
-#include <format>
-#include <fstream>
-#include <iterator>
-#include <map>
-#include <unordered_map>
-#include <string>
-#include <cctype>
+#include <exception>
 #include <memory>
+#include <string>
 #include <utility>
-#include <vector>
 
 namespace vcd {
 namespace utils {
@@ -62,10 +56,6 @@ class TypeException : public Exception
 public:
     explicit TypeException(const std::string& message) : Exception(message) {}
 };
-
-// -----------------------------
-struct Scope;
-using ScopePtr = std::shared_ptr<Scope>;
 
 // -----------------------------
 class Variable;
@@ -121,8 +111,7 @@ public:
     // Return:  *true* if new_value is dumped into VCD file,
     //         *false* if new_value is not changed from priveios *timestamp* for a given var
     // Events are never deduplicated: every call triggers the event.
-    bool change(const VarPtr &var, TimeStamp timestamp, const VarValue &value)
-    { return _change(var, timestamp, value); }
+    bool change(const VarPtr &var, TimeStamp timestamp, const VarValue &value);
 
     bool change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value);
 
@@ -144,82 +133,17 @@ public:
     //! VCD viewer applications may display different scope types differently
     void set_scope_type(const std::string& scope, ScopeType);
 
-    void set_scope_default_type(ScopeType type)
-    { _scope_def_type = type; }
+    void set_scope_default_type(ScopeType type);
 
-    void set_scope_sep(const std::string& scope_sep)
-    {
-        if (scope_sep.empty() || scope_sep == _scope_sep)
-            return;
-        _scope_sep = scope_sep;
-    }
+    void set_scope_sep(const std::string& scope_sep);
     //! get VCD Variable (throws PhaseException if it is not registered)
     VarPtr var(const std::string &scope, const std::string &name) const;
 
     static const VariableType var_def_type = VariableType::integer;
 
-protected:
-    bool _change(const VarPtr&, TimeStamp, const VarValue&);
-    //! Validate *timestamp* and move the current time to it
-    void _advance(TimeStamp timestamp);
-    //! Write "#<timestamp>" once per timestamp
-    void _print_timestamp();
-    void _dump_off();
-    void _dump_values(const char *keyword);
-    void _scope_declaration(const std::string& name, ScopeType type);
-    //! Dump VCD header into file
-    void _write_header();
-    //! Turn to dumping phase, no more variables regestration allowed
-    void _finalize_registration();
-    //! Format into the output buffer
-    template <class... Args>
-    void _print(std::format_string<Args...> fmt, Args&&... args)
-    {
-        std::format_to(std::back_inserter(_buf), fmt, std::forward<Args>(args)...);
-        _write_buf_if_full();
-    }
-    //! Append "<value><ident in hex>\n" into the output buffer (hot path, no std::format)
-    void _print_change(const VarValue &value, unsigned ident);
-    //! Write the output buffer into the file when it is large enough
-    void _write_buf_if_full()
-    {
-        if (_buf.size() >= buf_limit)
-            _write_buf();
-    }
-    void _write_buf();
-    //! Find a registered var (throws PhaseException), reuses a key buffer
-    const VarPtr& _find_var(const std::string &scope, const std::string &name);
-
-    static constexpr size_t buf_limit = 64 * 1024;
-
 private:
-    TimeStamp _timestamp;
-    HeadPtr _header;
-
-    // settings
-    std::string _scope_sep;
-    ScopeType   _scope_def_type{};
-    std::string _filename;
-    std::ofstream _ofile;
-
-    // scope name -> scope
-    std::map<std::string, ScopePtr> _scopes;
-    // (scope + '\0' + name) -> var
-    std::unordered_map<std::string, VarPtr> _vars;
-
-    // state
-    bool _closed{};
-    bool _dumping{};
-    bool _registering{};
-    bool _timestamp_printed{};
-
-    // registered vars and their last dumped values, indexed by var ident
-    std::vector<std::pair<VarPtr, VarValue>> _values;
-
-    // reusable buffers: no memory allocation per change in a steady state
-    std::string _buf;     // formatted output not written to the file yet
-    VarValue    _record;  // change record of the current change
-    std::string _key;     // lookup key of change(scope, name)
+    struct Impl;
+    std::unique_ptr<Impl> _impl;
 };
 
 // -----------------------------
