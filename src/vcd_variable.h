@@ -6,13 +6,13 @@
 
 namespace vcd {
 // A registered variable: its declaration and the rules of its values
-struct VCDVariable
+struct Variable
 {
     // how the values are written
     enum class Kind { scalar, vector, real, string, event };
 
-    // The variable of *type* with its default *size* if `0` (throws VCDTypeException)
-    VCDVariable(std::string var_name, VariableType var_type, unsigned var_size, unsigned var_ident);
+    // The variable of *type* with its default *size* if `0` (throws TypeException)
+    Variable(std::string var_name, VariableType var_type, unsigned var_size, unsigned var_ident);
 
     const std::string  name;
     const VariableType type;
