@@ -4,6 +4,8 @@
 #include <cassert>
 #include <algorithm>
 #include <array>
+#include <charconv>
+#include <iterator>
 #include <list>
 #include <utility>
 #include "vcd_writer.h"
@@ -18,13 +20,18 @@ using namespace utils;
 
 namespace {
 // -----------------------------
+// Locale-independent ASCII helpers (std::tolower/isgraph depend on the C locale and are slower)
+constexpr char to_lower(char c) { return (c >= 'A' && c <= 'Z') ? char(c - 'A' + 'a') : c; }
+constexpr bool is_graph(char c) { return c > ' ' && c < '\x7f'; }
+
+// -----------------------------
 // VCD tokens are separated by whitespace, so identifiers must not contain any,
 // and must not look like a keyword ("$end", "$var", ...)
 bool is_valid_token(const std::string &s)
 {
     if (s.empty() || s[0] == '$')
         return false;
-    return std::all_of(s.begin(), s.end(), [](char c) { return std::isgraph(static_cast<unsigned char>(c)) != 0; });
+    return std::all_of(s.begin(), s.end(), is_graph);
 }
 
 // -----------------------------
@@ -47,14 +54,29 @@ std::vector<std::string> split(const std::string &s, const std::string &sep)
 }
 
 // -----------------------------
+void make_var_key(std::string &key, const std::string &scope, const std::string &name)
+{
+    key.clear();
+    key += scope;
+    key += '\0';
+    key += name;
+}
+
 std::string var_key(const std::string &scope, const std::string &name)
 {
     std::string key;
     key.reserve(scope.size() + name.size() + 1);
-    key += scope;
-    key += '\0';
-    key += name;
+    make_var_key(key, scope, name);
     return key;
+}
+
+// -----------------------------
+// Append the unsigned *value* in the given base (lowercase, same as "{:d}"/"{:x}")
+void append_number(std::string &out, uint64_t value, int base)
+{
+    char digits[64];
+    const auto res = std::to_chars(std::begin(digits), std::end(digits), value, base);
+    out.append(digits, res.ptr);
 }
 } // namespace
 
@@ -162,8 +184,10 @@ public:
 
     //! string representation of variable declartion in VCD
     [[nodiscard]] std::string declartion() const;
-    //! string representation of value change record in VCD
-    [[nodiscard]] virtual VarValue change_record(const VarValue &value) const = 0;
+    //! string representation of value change record in VCD, written into *record*
+    //! (a reused buffer: no memory allocation once its capacity is enough;
+    //!  its contents are unspecified if the value is invalid and an exception is thrown)
+    virtual void change_record(const VarValue &value, VarValue &record) const = 0;
 
     friend class VCDWriter;
 };
@@ -181,15 +205,17 @@ struct VCDScalarVariable : public VCDVariable
 {
     VCDScalarVariable(const std::string &name, VariableType type, unsigned size, unsigned ident) :
         VCDVariable(name, type, size, ident) {}
-    [[nodiscard]] VarValue change_record(const VarValue &value) const override
+    void change_record(const VarValue &value, VarValue &record) const override
     {
-        if (value.empty())
-            return { char(VCDValues::UNDEF) };
-        const char c = char(std::tolower(static_cast<unsigned char>(value[0])));
-        if (value.size() != 1 || (c != VCDValues::ONE   && c != VCDValues::ZERO
-                               && c != VCDValues::UNDEF && c != VCDValues::HIGHV))
-            throw VCDTypeException{ std::format("Invalid scalar value '{}'", value) };
-        return {c};
+        char c = VCDValues::UNDEF;
+        if (!value.empty())
+        {
+            c = to_lower(value[0]);
+            if (value.size() != 1 || (c != VCDValues::ONE   && c != VCDValues::ZERO
+                                   && c != VCDValues::UNDEF && c != VCDValues::HIGHV))
+                throw VCDTypeException{ std::format("Invalid scalar value '{}'", value) };
+        }
+        record.assign(1, c);
     }
 };
 
@@ -201,13 +227,14 @@ struct VCDStringVariable : public VCDVariable
 {
     VCDStringVariable(const std::string &name, VariableType type, unsigned size, unsigned ident) :
         VCDVariable(name, type, size, ident) {}
-    [[nodiscard]]VarValue change_record(const VarValue &value) const override
+    void change_record(const VarValue &value, VarValue &record) const override
     {
-        const bool ok = !value.empty() && std::all_of(value.begin(), value.end(),
-            [](char c) { return std::isgraph(static_cast<unsigned char>(c)) != 0; });
-        if (!ok)
+        if (value.empty() || !std::all_of(value.begin(), value.end(), is_graph))
             throw VCDTypeException{ std::format("Invalid string value '{}'", value) };
-        return "s" + value + " ";
+        record.clear();
+        record += 's';
+        record += value;
+        record += ' ';
     }
 };
 
@@ -218,7 +245,7 @@ struct VCDRealVariable : public VCDVariable
 {
     VCDRealVariable(const std::string &name, VariableType type, unsigned size, unsigned ident) :
         VCDVariable(name, type, size, ident) {}
-    [[nodiscard]]std::string change_record(const VarValue &value) const override
+    void change_record(const VarValue &value, VarValue &record) const override
     {
         double d = 0.0;
         size_t idx = 0;
@@ -226,7 +253,8 @@ struct VCDRealVariable : public VCDVariable
         catch (const std::exception&) { idx = 0; }
         if (idx == 0 || idx != value.size())
             throw VCDTypeException{ std::format("Invalid real value '{}'", value) };
-        return std::format("r{:.16g} ", d);
+        record.clear();
+        std::format_to(std::back_inserter(record), "r{:.16g} ", d);
     }
 };
 
@@ -237,7 +265,7 @@ struct VCDVectorVariable : public VCDVariable
 {
     VCDVectorVariable(const std::string &name, VariableType type, unsigned size, unsigned ident) :
         VCDVariable(name, type, size, ident) {}
-    [[nodiscard]]std::string change_record(const VarValue &value) const override;
+    void change_record(const VarValue &value, VarValue &record) const override;
 };
 
 // -----------------------------
@@ -323,7 +351,9 @@ VarPtr VCDWriter::register_var(const std::string &scope, const std::string &name
             break;
     }
     // events have no value, other vars validate the initial value
-    VarValue record = (type == VariableType::event) ? VarValue{} : pvar->change_record(init_value);
+    VarValue record;
+    if (type != VariableType::event)
+        pvar->change_record(init_value, record);
 
     // Only alter state after all checks succeeded
     auto it_scope = _scopes.find(scope);
@@ -354,8 +384,33 @@ void VCDWriter::_print_timestamp()
 {
     if (_timestamp_printed)
         return;
-    _print("#{:d}\n", _timestamp);
+    _buf += '#';
+    append_number(_buf, _timestamp, 10);
+    _buf += '\n';
     _timestamp_printed = true;
+    _write_buf_if_full();
+}
+
+// -----------------------------
+void VCDWriter::_print_change(const VarValue &value, unsigned ident)
+{
+    _buf += value;
+    append_number(_buf, ident, 16);
+    _buf += '\n';
+    _write_buf_if_full();
+}
+
+// -----------------------------
+void VCDWriter::_write_buf()
+{
+    if (_buf.empty())
+        return;
+    // clear the buffer even on a write error, it is reported once
+    std::string buf;
+    buf.swap(_buf);
+    _ofile.write(buf.data(), std::streamsize(buf.size()));
+    buf.clear();
+    _buf.swap(buf); // keep the capacity
 }
 
 // -----------------------------
@@ -371,7 +426,7 @@ bool VCDWriter::_change(const VarPtr &var, TimeStamp timestamp, const VarValue &
         throw VCDTypeException{ std::format("VCDVariable '{}' do not registered", var->_name) };
 
     // validate the value before any state change
-    VarValue change_value = var->change_record(value);
+    var->change_record(value, _record);
     _advance(timestamp);
 
     if (var->_type == VariableType::event)
@@ -382,21 +437,22 @@ bool VCDWriter::_change(const VarPtr &var, TimeStamp timestamp, const VarValue &
         if (_dumping)
         {
             _print_timestamp();
-            _print("{:s}{:x}\n", change_value, var->_ident);
+            _print_change(_record, var->_ident);
         }
         return true;
     }
 
     auto &prev = _values[var->_ident].second;
-    if (prev == change_value)
+    if (prev == _record)
         return false;
-    prev = std::move(change_value);
+    // the old value's buffer is reused by the next change
+    prev.swap(_record);
 
     // dump it into file
     if (_dumping && !_registering)
     {
         _print_timestamp();
-        _print("{:s}{:x}\n", prev, var->_ident);
+        _print_change(prev, var->_ident);
     }
     return true;
 }
@@ -404,7 +460,17 @@ bool VCDWriter::_change(const VarPtr &var, TimeStamp timestamp, const VarValue &
 // -----------------------------
 bool VCDWriter::change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value)
 {
-    return _change(var(scope, name), timestamp, value);
+    return _change(_find_var(scope, name), timestamp, value);
+}
+
+// -----------------------------
+const VarPtr& VCDWriter::_find_var(const std::string &scope, const std::string &name)
+{
+    make_var_key(_key, scope, name);
+    auto it_var = _vars.find(_key);
+    if (it_var == _vars.end())
+        throw VCDPhaseException{ std::format("The var '{}' in scope '{}' does not exist", name, scope) };
+    return it_var->second;
 }
 
 // -----------------------------
@@ -477,6 +543,7 @@ void VCDWriter::flush(const TimeStamp *timestamp)
     }
     if (_registering)
         _finalize_registration();
+    _write_buf();
     _ofile.flush();
 }
 
@@ -527,7 +594,7 @@ void VCDWriter::_dump_values(const char *keyword)
     {
         if (p.second.empty()) // events have no value
             continue;
-        _print("{:s}{:x}\n", p.second, p.first->_ident);
+        _print_change(p.second, p.first->_ident);
     }
     _print("$end\n");
 }
@@ -617,31 +684,31 @@ std::string VCDVariable::declartion() const
 //  An empty  *value* is the same as `VCDValues::UNDEF`.
 //  A shorter *value* is left-extended: with 'x'/'z' if its leftmost bit is 'x'/'z',
 //  with '0' otherwise (IEEE 1364-2005, 18.2.1).
-VarValue VCDVectorVariable::change_record(const VarValue &value) const
+void VCDVectorVariable::change_record(const VarValue &value, VarValue &record) const
 {
     if (value.size() > _size)
         throw VCDTypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, _size) };
 
-    VarValue val;
-    val.reserve(_size + 2);
-    val += 'b';
+    // "b<_size bits> ", written in place (*record* is a scratch buffer, garbage on throw)
+    record.resize(size_t(_size) + 2);
+    char *p = record.data();
+    *p++ = 'b';
     if (value.empty())
-        val.append(_size, VCDValues::UNDEF);
+        p = std::fill_n(p, _size, char(VCDValues::UNDEF));
     else
     {
-        const char first = char(std::tolower(static_cast<unsigned char>(value[0])));
+        const char first = to_lower(value[0]);
         const char fill = (first == VCDValues::UNDEF || first == VCDValues::HIGHV) ? first : char(VCDValues::ZERO);
-        val.append(_size - value.size(), fill);
+        p = std::fill_n(p, _size - value.size(), fill);
         for (const char ch : value)
         {
-            const char c = char(std::tolower(static_cast<unsigned char>(ch)));
+            const char c = to_lower(ch);
             if (c != VCDValues::ONE && c != VCDValues::ZERO && c != VCDValues::UNDEF && c != VCDValues::HIGHV)
                 throw VCDTypeException{ std::format("Invalid binary vector value '{}' size '{}'", value, _size) };
-            val += c;
+            *p++ = c;
         }
     }
-    val += ' ';
-    return val;
+    *p = ' ';
 }
 
 // -----------------------------
