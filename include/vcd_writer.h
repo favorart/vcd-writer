@@ -15,7 +15,7 @@ std::string now();
 // -----------------------------
 // valid VCD scope types
 enum class ScopeType : char
-{ begin, fork, function, module, task };
+{ begin, fork, function, module, task, _count_ };
 // valid VCD variable types
 enum class VariableType : char
 { wire, reg, string, parameter, integer, real, realtime, time, event,
