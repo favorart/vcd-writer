@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <ctime>
 #include <iterator>
 #include <mutex>
@@ -28,10 +29,24 @@ std::string now()
 }
 
 // -----------------------------
-bool validate_date([[maybe_unused]] const std::string &date)
+bool validate_date(const std::string &date)
 {
-    // TODO: validate format
-    return true;
+    // positions of the fields in "YYYY-MM-DD hh:mm:ss"
+    constexpr std::string_view format = "YYYY-MM-DD hh:mm:ss";
+    if (date.size() != format.size())
+        return false;
+    for (size_t i = 0; i < format.size(); ++i)
+    {
+        const bool digit = (date[i] >= '0' && date[i] <= '9');
+        const bool sep = (format[i] == '-' || format[i] == ' ' || format[i] == ':');
+        if (sep ? date[i] != format[i] : !digit)
+            return false;
+    }
+    auto field = [&date](size_t pos, size_t len) { return std::stoi(date.substr(pos, len)); };
+    const std::chrono::year_month_day ymd{ std::chrono::year{ field(0, 4) },
+                                           std::chrono::month{ unsigned(field(5, 2)) },
+                                           std::chrono::day{ unsigned(field(8, 2)) } };
+    return ymd.ok() && field(11, 2) < 24 && field(14, 2) < 60 && field(17, 2) <= 60; // 60: leap second
 }
 
 // -----------------------------

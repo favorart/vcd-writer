@@ -21,7 +21,7 @@ std::vector<std::string> split(const std::string &s, const std::string &sep);
 void make_var_key(std::string &key, const std::string &scope, const std::string &name);
 // Append the unsigned *value* in the given base (lowercase, same as "{:d}"/"{:x}")
 void append_number(std::string &out, uint64_t value, int base);
-// Format of a header date
+// "YYYY-MM-DD hh:mm:ss" with a valid calendar date and time
 bool validate_date(const std::string &date);
 // Every line break ("\n", "\r" or "\r\n") becomes "\n\t"
 std::string indent_lines(const std::string &str);
