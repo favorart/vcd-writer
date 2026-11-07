@@ -30,30 +30,30 @@ static const std::string HEADER = "$timescale 1 ns $end\n"
 // -----------------------------
 
 // Test case for invalid timescale quan
-TEST(VCDHeaderTest, TimeScaleQuanInvalid)
+TEST(HeaderTest, TimeScaleQuanInvalid)
 {
-    EXPECT_THROW(makeVCDHeader(TimeScale::_COUNT_), VCDTypeException);
-    EXPECT_THROW(makeVCDHeader(TimeScale(5)), VCDTypeException);
-    EXPECT_THROW(makeVCDHeader(TimeScale(0)), VCDTypeException);
+    EXPECT_THROW(make_header(TimeScale::_count_), TypeException);
+    EXPECT_THROW(make_header(TimeScale(5)), TypeException);
+    EXPECT_THROW(make_header(TimeScale(0)), TypeException);
 }
 
 // Test case for invalid timescale unit
-TEST(VCDHeaderTest, TimeScaleUnitInvalid)
+TEST(HeaderTest, TimeScaleUnitInvalid)
 {
-    EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::_count_), VCDTypeException);
-    EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit(-1)), VCDTypeException);
+    EXPECT_THROW(make_header(TimeScale::one, TimeScaleUnit::_count_), TypeException);
+    EXPECT_THROW(make_header(TimeScale::one, TimeScaleUnit(-1)), TypeException);
 }
 
 // "$end" inside a header value would terminate the section early
-TEST(VCDHeaderTest, EndKeywordInjection)
+TEST(HeaderTest, EndKeywordInjection)
 {
-    EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2024 $end"), VCDTypeException);
-    EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "", "x $end $var"), VCDTypeException);
-    EXPECT_THROW(makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "", "", "$end"), VCDTypeException);
+    EXPECT_THROW(make_header(TimeScale::one, TimeScaleUnit::ns, "2024 $end"), TypeException);
+    EXPECT_THROW(make_header(TimeScale::one, TimeScaleUnit::ns, "", "x $end $var"), TypeException);
+    EXPECT_THROW(make_header(TimeScale::one, TimeScaleUnit::ns, "", "", "$end"), TypeException);
 }
 
 // Regression: multi-line comments used to overflow the heap buffer
-TEST(VCDHeaderTest, MultiLineComment)
+TEST(HeaderTest, MultiLineComment)
 {
     const std::string filename = test_filename();
     std::string comment = "a\nb\r\nc\rd";
@@ -64,7 +64,7 @@ TEST(VCDHeaderTest, MultiLineComment)
         expected += "\n\tline";
     }
     {
-        VCDWriter writer(filename, makeVCDHeader(TimeScale::TEN, TimeScaleUnit::us, "", comment));
+        Writer writer(filename, make_header(TimeScale::ten, TimeScaleUnit::us, "", comment));
     }
     EXPECT_EQ(read_file(filename), "$timescale 10 us $end\n"
                                    "$comment " + expected + " $end\n"
@@ -73,14 +73,14 @@ TEST(VCDHeaderTest, MultiLineComment)
 
 // -----------------------------
 
-// Test case for initializing VCDWriter
-TEST(VCDWriterTest, Constructor)
+// Test case for initializing Writer
+TEST(WriterTest, Constructor)
 {
     HeadPtr header;
     // empty date
-    EXPECT_NO_THROW(header = makeVCDHeader(TimeScale::HUNDRED, TimeScaleUnit::ms, "", "comment", "version"));
+    EXPECT_NO_THROW(header = make_header(TimeScale::hundred, TimeScaleUnit::ms, "", "comment", "version"));
     EXPECT_NE(header, nullptr);
-    EXPECT_NO_THROW(VCDWriter("test.vcd", header));
+    EXPECT_NO_THROW(Writer("test.vcd", header));
 
     // Read the contents to the output file
     const std::string contents = read_file();
@@ -93,23 +93,23 @@ TEST(VCDWriterTest, Constructor)
 }
 
 // A null header is replaced by the default one
-TEST(VCDWriterTest, NullHeader)
+TEST(WriterTest, NullHeader)
 {
     const std::string filename = test_filename();
     {
         HeadPtr header;
-        VCDWriter writer(filename, header);
+        Writer writer(filename, header);
     }
     EXPECT_EQ(read_file(filename).rfind("$timescale 1 ns $end\n", 0), 0u);
 }
 
 // Initial timestamp is 64-bit
-TEST(VCDWriterTest, InitTimestamp64)
+TEST(WriterTest, InitTimestamp64)
 {
     const std::string filename = test_filename();
     const TimeStamp ts = TimeStamp(1) << 40;
     {
-        VCDWriter writer(filename, makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, ""), ts);
+        Writer writer(filename, make_header(TimeScale::one, TimeScaleUnit::ns, ""), ts);
         auto var = writer.register_var("top", "v", VariableType::wire, 1, "0");
         writer.change(var, ts + 1, "1");
     }
@@ -128,13 +128,13 @@ TEST(VCDWriterTest, InitTimestamp64)
 
 // -----------------------------
 
-class VCDWriterFixture : public ::testing::Test
+class WriterFixture : public ::testing::Test
 {
 protected:
     void SetUp() override
     {
         filename = test_filename();
-        writer = std::make_shared<VCDWriter>(filename, header);
+        writer = std::make_shared<Writer>(filename, header);
     }
     void TearDown() override {}
 
@@ -144,7 +144,7 @@ protected:
         return read_file(filename);
     }
 
-    HeadPtr header = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "2024-05-21 22:16:16");
+    HeadPtr header = make_header(TimeScale::one, TimeScaleUnit::ns, "2024-05-21 22:16:16");
     WriterPtr writer;
     std::string filename;
 
@@ -156,8 +156,8 @@ protected:
 
 // -----------------------------
 
-// Test case for flushing VCDWriter
-TEST_F(VCDWriterFixture, Flush)
+// Test case for flushing Writer
+TEST_F(WriterFixture, Flush)
 {
     writer->flush();
 
@@ -167,34 +167,34 @@ TEST_F(VCDWriterFixture, Flush)
     EXPECT_NE(contents.find("$enddefinitions"), std::string::npos);
 }
 
-// Test case for closing VCDWriter
-TEST_F(VCDWriterFixture, Close)
+// Test case for closing Writer
+TEST_F(WriterFixture, Close)
 {
     writer->close();
-    EXPECT_THROW(writer->flush(), vcd::VCDPhaseException);
-    EXPECT_THROW(writer->dump_off(1), vcd::VCDPhaseException);
-    EXPECT_THROW(writer->dump_on(1), vcd::VCDPhaseException);
+    EXPECT_THROW(writer->flush(), vcd::PhaseException);
+    EXPECT_THROW(writer->dump_off(1), vcd::PhaseException);
+    EXPECT_THROW(writer->dump_on(1), vcd::PhaseException);
     EXPECT_NO_THROW(writer->close());
 }
 
-// Test case for changing variable after VCDWriter is closed
-TEST_F(VCDWriterFixture, ChangeAfterClose)
+// Test case for changing variable after Writer is closed
+TEST_F(WriterFixture, ChangeAfterClose)
 {
     auto var = writer->register_var(scope, name);
     writer->close();
-    EXPECT_THROW(writer->change(var, 10, "1"), vcd::VCDPhaseException);
+    EXPECT_THROW(writer->change(var, 10, "1"), vcd::PhaseException);
 }
 
-// Test case for aliasing variable after VCDWriter is closed
-TEST_F(VCDWriterFixture, AliasAfterClose)
+// Test case for aliasing variable after Writer is closed
+TEST_F(WriterFixture, AliasAfterClose)
 {
     auto var = writer->register_var(scope, name);
     writer->close();
-    EXPECT_THROW(writer->register_var(scope, name), vcd::VCDPhaseException);
+    EXPECT_THROW(writer->register_var(scope, name), vcd::PhaseException);
 }
 
 // Test case for no scopes defined
-TEST_F(VCDWriterFixture, NoScopes)
+TEST_F(WriterFixture, NoScopes)
 {
     writer->flush();
 
@@ -205,7 +205,7 @@ TEST_F(VCDWriterFixture, NoScopes)
 }
 
 // Test case for one variable
-TEST_F(VCDWriterFixture, OneVar)
+TEST_F(WriterFixture, OneVar)
 {
     auto var = writer->register_var(scope, name);
     writer->change(var, 0, "1");
@@ -218,10 +218,10 @@ TEST_F(VCDWriterFixture, OneVar)
     EXPECT_NE(contents.find("1"), std::string::npos);
 }
 
-TEST_F(VCDWriterFixture, RegisterVariables)
+TEST_F(WriterFixture, RegisterVariables)
 {
     // No such a var
-    EXPECT_THROW(writer->var(scope, name), VCDException);
+    EXPECT_THROW(writer->var(scope, name), Exception);
     // Register a variable
     VarPtr var = writer->register_var(scope, name);
     // The variable is registered
@@ -230,7 +230,7 @@ TEST_F(VCDWriterFixture, RegisterVariables)
     EXPECT_EQ(writer->var(scope, name), var);
 
     // No such a var
-    EXPECT_THROW(writer->var(scope, next_name), VCDException);
+    EXPECT_THROW(writer->var(scope, next_name), Exception);
     // Register a next variable
     VarPtr next_var = writer->register_var(scope, next_name, VariableType::wire, size);
     // The next variable is registered
@@ -240,12 +240,12 @@ TEST_F(VCDWriterFixture, RegisterVariables)
 
     // Change the variable's value
     TimeStamp timestamp = 10;
-    VarValue value = { VCDValues::UNDEF };
+    VarValue value = { Bit::undef };
     bool changed = writer->change(var, timestamp, value);
     // Check that the value is not changed error
     EXPECT_FALSE(changed);
 
-    value = { VCDValues::ONE };
+    value = { Bit::one };
     changed = writer->change(var, timestamp, value);
     // Check that the value is changed correctly
     EXPECT_TRUE(changed);
@@ -259,10 +259,10 @@ TEST_F(VCDWriterFixture, RegisterVariables)
 
     // Check for a new timestamp < the set timestamp
     timestamp = 10;
-    EXPECT_THROW(writer->change(scope, next_name, timestamp, value), VCDException);
+    EXPECT_THROW(writer->change(scope, next_name, timestamp, value), Exception);
 }
 
-TEST_F(VCDWriterFixture, ChangeVectorValue)
+TEST_F(WriterFixture, ChangeVectorValue)
 {
     // Register a vector variable
     VarPtr var = writer->register_var("my_scope", "my_vector", VariableType::wire, 4);
@@ -274,7 +274,7 @@ TEST_F(VCDWriterFixture, ChangeVectorValue)
     EXPECT_TRUE(changed);
 }
 
-TEST_F(VCDWriterFixture, DumpValues)
+TEST_F(WriterFixture, DumpValues)
 {
     // Register a variable
     VarPtr var = writer->register_var("my_scope", name, VariableType::wire, 1);
@@ -303,7 +303,7 @@ TEST_F(VCDWriterFixture, DumpValues)
         "b1 0\n");
 }
 
-TEST_F(VCDWriterFixture, FlushClose)
+TEST_F(WriterFixture, FlushClose)
 {
     // Register a variable
     VarPtr var = writer->register_var("my_scope", name, VariableType::wire, 1);
@@ -313,12 +313,12 @@ TEST_F(VCDWriterFixture, FlushClose)
     VarValue value = "1";
     writer->change(var, timestamp, value);
 
-    // Flush the VCDWriter object
+    // Flush the Writer object
     writer->flush();
-    // Close the VCDWriter object
+    // Close the Writer object
     writer->close();
     // Cannot flush after close
-    EXPECT_THROW(writer->flush(), VCDException);
+    EXPECT_THROW(writer->flush(), Exception);
 
     // Read the contents to the output file
     const std::string contents = read_file(filename);
@@ -338,7 +338,7 @@ TEST_F(VCDWriterFixture, FlushClose)
 }
 
 // flush() with a timestamp writes it once
-TEST_F(VCDWriterFixture, FlushTimestamp)
+TEST_F(WriterFixture, FlushTimestamp)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 1, "0");
     TimeStamp ts = 20;
@@ -360,15 +360,15 @@ TEST_F(VCDWriterFixture, FlushTimestamp)
         "b1 0\n");
 }
 
-TEST_F(VCDWriterFixture, SetScopeType)
+TEST_F(WriterFixture, SetScopeType)
 {
     // Add the scope with a var
     VarPtr var = writer->register_var("my_scope", name, VariableType::wire, 1);
 
     // Change the scope type to "function" (a string literal is accepted)
     writer->set_scope_type("my_scope", ScopeType::function);
-    EXPECT_THROW(writer->set_scope_type("no_scope", ScopeType::function), VCDPhaseException);
-    // Flush the VCDWriter object
+    EXPECT_THROW(writer->set_scope_type("no_scope", ScopeType::function), PhaseException);
+    // Flush the Writer object
     writer->flush();
 
     // Read the contents to the output file
@@ -386,13 +386,13 @@ TEST_F(VCDWriterFixture, SetScopeType)
         "$end\n");
 }
 
-TEST_F(VCDWriterFixture, SetScopeDefaultType)
+TEST_F(WriterFixture, SetScopeDefaultType)
 {
     // Set the default scope type to "module"
     writer->set_scope_default_type(ScopeType::fork);
     // Register a variable
     VarPtr var = writer->register_var("my_scope", "my_var", VariableType::wire, 1);
-    // Flush the VCDWriter object
+    // Flush the Writer object
     writer->flush();
 
     // Read the contents to the output file
@@ -410,13 +410,13 @@ TEST_F(VCDWriterFixture, SetScopeDefaultType)
         "$end\n");
 }
 
-TEST_F(VCDWriterFixture, SetScopeSep)
+TEST_F(WriterFixture, SetScopeSep)
 {
     // Set the scope separator to "/"
     writer->set_scope_sep("/");
     // Register a variable
     VarPtr var = writer->register_var("my_scope/top", "my_var", VariableType::wire, 1);
-    // Flush the VCDWriter object
+    // Flush the Writer object
     writer->flush();
 
     // Read the contents to the output file
@@ -437,7 +437,7 @@ TEST_F(VCDWriterFixture, SetScopeSep)
 }
 
 // Regression: a parent scope was closed and re-opened before its child
-TEST_F(VCDWriterFixture, NestedScopes)
+TEST_F(WriterFixture, NestedScopes)
 {
     writer->register_var("a.b.c", "counter", VariableType::integer, 8);
     writer->register_var("a.b", "var", VariableType::integer, 8);
@@ -460,7 +460,7 @@ TEST_F(VCDWriterFixture, NestedScopes)
 }
 
 // Regression: scopes sharing a textual prefix ("a", "ab", "a-c") were nested wrongly
-TEST_F(VCDWriterFixture, ScopesWithCommonPrefix)
+TEST_F(WriterFixture, ScopesWithCommonPrefix)
 {
     writer->register_var("a", "x", VariableType::wire, 1);
     writer->register_var("a.b", "y", VariableType::wire, 1);
@@ -492,7 +492,7 @@ TEST_F(VCDWriterFixture, ScopesWithCommonPrefix)
         "$end\n");
 }
 
-TEST_F(VCDWriterFixture, DumpOff)
+TEST_F(WriterFixture, DumpOff)
 {
     // Register a variable
     VarPtr var = writer->register_var("my_scope", "my_var", VariableType::wire, 2);
@@ -508,7 +508,7 @@ TEST_F(VCDWriterFixture, DumpOff)
     // Change the value of the variable again
     writer->change(var, timestamp + 1, value);
 
-    // Flush the VCDWriter object
+    // Flush the Writer object
     writer->flush();
 
     // Read the contents to the output file
@@ -532,21 +532,21 @@ TEST_F(VCDWriterFixture, DumpOff)
 }
 
 // Regression: "$dumpon" was written without values and "$end"
-TEST_F(VCDWriterFixture, DumpOn)
+TEST_F(WriterFixture, DumpOn)
 {
     // Register a variable
     VarPtr var = writer->register_var("my_scope", "my_var", VariableType::wire, 3);
 
     // Change the value of the variable
     TimeStamp timestamp = 10;
-    VarValue value = { VCDValues::ZERO, VCDValues::ZERO, VCDValues::ZERO };
+    VarValue value = { Bit::zero, Bit::zero, Bit::zero };
     writer->change(var, timestamp, value);
 
     // Dump off
     writer->dump_off(timestamp);
 
     // Change the value of the variable again
-    value = { VCDValues::ZERO, VCDValues::ZERO, VCDValues::ONE };
+    value = { Bit::zero, Bit::zero, Bit::one };
     writer->change(var, timestamp, value);
 
     // Dump off twice
@@ -556,13 +556,13 @@ TEST_F(VCDWriterFixture, DumpOn)
     writer->dump_on(timestamp + 1);
 
     // Change the value of the variable again
-    value = { VCDValues::ZERO, VCDValues::ONE, VCDValues::ONE };
+    value = { Bit::zero, Bit::one, Bit::one };
     writer->change(var, timestamp + 1, value);
 
     // Dump on twice: no-op
     writer->dump_on(timestamp + 2);
 
-    // Flush the VCDWriter object
+    // Flush the Writer object
     writer->flush();
 
     // Read the contents to the output file
@@ -591,7 +591,7 @@ TEST_F(VCDWriterFixture, DumpOn)
 }
 
 // Regression: dump_on() during registration wrote "$dumpon" before the header
-TEST_F(VCDWriterFixture, DumpOnDuringRegistration)
+TEST_F(WriterFixture, DumpOnDuringRegistration)
 {
     writer->dump_on(0);
     writer->register_var("s", "v", VariableType::wire, 1);
@@ -608,7 +608,7 @@ TEST_F(VCDWriterFixture, DumpOnDuringRegistration)
 }
 
 // Regression: dump_off() before the first change produced "$dumpvars" without "$end"
-TEST_F(VCDWriterFixture, DumpOffDuringRegistration)
+TEST_F(WriterFixture, DumpOffDuringRegistration)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 1);
     writer->dump_off(0);
@@ -634,43 +634,43 @@ TEST_F(VCDWriterFixture, DumpOffDuringRegistration)
 }
 
 // Regression: dump_off()/dump_on() did not track time, so timestamps could go backwards
-TEST_F(VCDWriterFixture, DumpOffTimestampOrder)
+TEST_F(WriterFixture, DumpOffTimestampOrder)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 1);
     writer->change(var, 1, "1");
     writer->dump_off(5);
-    EXPECT_THROW(writer->change(var, 3, "0"), VCDPhaseException);
-    EXPECT_THROW(writer->dump_on(4), VCDPhaseException);
+    EXPECT_THROW(writer->change(var, 3, "0"), PhaseException);
+    EXPECT_THROW(writer->dump_on(4), PhaseException);
     EXPECT_NO_THROW(writer->dump_on(5));
 }
 
 // Regression: null var was dereferenced before the null check
-TEST_F(VCDWriterFixture, NullVar)
+TEST_F(WriterFixture, NullVar)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 1);
     writer->change(var, 5, "1");
-    EXPECT_THROW(writer->change(VarPtr{}, 1, "1"), VCDTypeException);
-    EXPECT_THROW(writer->change(VarPtr{}, 10, "1"), VCDTypeException);
+    EXPECT_THROW(writer->change(VarPtr{}, 1, "1"), TypeException);
+    EXPECT_THROW(writer->change(VarPtr{}, 10, "1"), TypeException);
 }
 
 // A variable registered in another writer is rejected
-TEST_F(VCDWriterFixture, ForeignVar)
+TEST_F(WriterFixture, ForeignVar)
 {
-    VCDWriter other(filename + ".other.vcd", makeVCDHeader());
+    Writer other(filename + ".other.vcd", make_header());
     VarPtr foreign = other.register_var("s", "v", VariableType::wire, 1);
     writer->register_var("s", "v", VariableType::wire, 1);
-    EXPECT_THROW(writer->change(foreign, 1, "1"), VCDTypeException);
+    EXPECT_THROW(writer->change(foreign, 1, "1"), TypeException);
 }
 
 // Regression: last two characters of a vector value were not validated,
 // an empty value threw, and short 'x'/'z' values were left-extended with '0'
-TEST_F(VCDWriterFixture, VectorValues)
+TEST_F(WriterFixture, VectorValues)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 4, "0");
-    EXPECT_THROW(writer->change(var, 1, "0012"), VCDTypeException);
-    EXPECT_THROW(writer->change(var, 1, "7"), VCDTypeException);
-    EXPECT_THROW(writer->change(var, 1, "01-"), VCDTypeException);
-    EXPECT_THROW(writer->change(var, 1, "00000"), VCDTypeException);
+    EXPECT_THROW(writer->change(var, 1, "0012"), TypeException);
+    EXPECT_THROW(writer->change(var, 1, "7"), TypeException);
+    EXPECT_THROW(writer->change(var, 1, "01-"), TypeException);
+    EXPECT_THROW(writer->change(var, 1, "00000"), TypeException);
     writer->change(var, 1, "");
     writer->change(var, 2, "1Z");
     writer->change(var, 3, "xz");
@@ -696,11 +696,11 @@ TEST_F(VCDWriterFixture, VectorValues)
 }
 
 // Scalar: an empty value is 'x', anything else must be a single 4-state char
-TEST_F(VCDWriterFixture, ScalarValues)
+TEST_F(WriterFixture, ScalarValues)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::integer, 1, "0");
-    EXPECT_THROW(writer->change(var, 1, "10"), VCDTypeException);
-    EXPECT_THROW(writer->change(var, 1, "2"), VCDTypeException);
+    EXPECT_THROW(writer->change(var, 1, "10"), TypeException);
+    EXPECT_THROW(writer->change(var, 1, "2"), TypeException);
     EXPECT_TRUE(writer->change(var, 1, ""));
     EXPECT_TRUE(writer->change(var, 2, "Z"));
 
@@ -720,12 +720,12 @@ TEST_F(VCDWriterFixture, ScalarValues)
 }
 
 // Regression: a rejected duplicate left a "ghost" value sharing the next var's ident
-TEST_F(VCDWriterFixture, DuplicateVar)
+TEST_F(WriterFixture, DuplicateVar)
 {
     writer->register_var("s", "a", VariableType::wire, 1, "1");
-    EXPECT_THROW(writer->register_var("s", "a", VariableType::wire, 1, "0"), VCDTypeException);
+    EXPECT_THROW(writer->register_var("s", "a", VariableType::wire, 1, "0"), TypeException);
     // a rejected initial value does not leave anything behind either
-    EXPECT_THROW(writer->register_var("t", "c", VariableType::wire, 1, "7"), VCDTypeException);
+    EXPECT_THROW(writer->register_var("t", "c", VariableType::wire, 1, "7"), TypeException);
     writer->register_var("s", "b", VariableType::wire, 1, "z");
 
     EXPECT_EQ(contents(), HEADER +
@@ -742,7 +742,7 @@ TEST_F(VCDWriterFixture, DuplicateVar)
 }
 
 // Regression: event variables could not be changed at all
-TEST_F(VCDWriterFixture, EventVar)
+TEST_F(WriterFixture, EventVar)
 {
     VarPtr ev = writer->register_var("s", "ev", VariableType::event);
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 1, "0");
@@ -770,13 +770,13 @@ TEST_F(VCDWriterFixture, EventVar)
 }
 
 // Regression: realtime was written as a bit vector and accepted "1.5" as bits
-TEST_F(VCDWriterFixture, RealVars)
+TEST_F(WriterFixture, RealVars)
 {
     VarPtr rt = writer->register_var("s", "rt", VariableType::realtime);
     VarPtr r = writer->register_var("s", "r", VariableType::real);
-    EXPECT_THROW(writer->change(rt, 1, "abc"), VCDTypeException);
-    EXPECT_THROW(writer->change(rt, 1, "1.5x"), VCDTypeException);
-    EXPECT_THROW(writer->change(r, 1, ""), VCDTypeException);
+    EXPECT_THROW(writer->change(rt, 1, "abc"), TypeException);
+    EXPECT_THROW(writer->change(rt, 1, "1.5x"), TypeException);
+    EXPECT_THROW(writer->change(r, 1, ""), TypeException);
     writer->change(rt, 1, "1.5");
     writer->change(r, 1, "-2");
 
@@ -797,13 +797,13 @@ TEST_F(VCDWriterFixture, RealVars)
 }
 
 // Regression: string values could inject arbitrary lines into the VCD
-TEST_F(VCDWriterFixture, StringValues)
+TEST_F(WriterFixture, StringValues)
 {
     VarPtr s = writer->register_var("s", "str", VariableType::string);
-    EXPECT_THROW(writer->change(s, 1, "a\n#999"), VCDTypeException);
-    EXPECT_THROW(writer->change(s, 1, "a b"), VCDTypeException);
-    EXPECT_THROW(writer->change(s, 1, "a\tb"), VCDTypeException);
-    EXPECT_THROW(writer->change(s, 1, ""), VCDTypeException);
+    EXPECT_THROW(writer->change(s, 1, "a\n#999"), TypeException);
+    EXPECT_THROW(writer->change(s, 1, "a b"), TypeException);
+    EXPECT_THROW(writer->change(s, 1, "a\tb"), TypeException);
+    EXPECT_THROW(writer->change(s, 1, ""), TypeException);
     writer->change(s, 1, "hello");
     writer->dump_off(2);
 
@@ -824,29 +824,29 @@ TEST_F(VCDWriterFixture, StringValues)
 }
 
 // Regression: scope and var names could inject arbitrary declarations into the VCD
-TEST_F(VCDWriterFixture, InvalidNames)
+TEST_F(WriterFixture, InvalidNames)
 {
-    EXPECT_THROW(writer->register_var("s", "n $end\n$var wire 1 ! evil", VariableType::wire, 1), VCDTypeException);
-    EXPECT_THROW(writer->register_var("s", "a b", VariableType::wire, 1), VCDTypeException);
-    EXPECT_THROW(writer->register_var("s", "$end", VariableType::wire, 1), VCDTypeException);
-    EXPECT_THROW(writer->register_var("s\nx", "v", VariableType::wire, 1), VCDTypeException);
-    EXPECT_THROW(writer->register_var("a..b", "v", VariableType::wire, 1), VCDTypeException);
-    EXPECT_THROW(writer->register_var(".a", "v", VariableType::wire, 1), VCDTypeException);
-    EXPECT_THROW(writer->register_var("a.", "v", VariableType::wire, 1), VCDTypeException);
-    EXPECT_THROW(writer->register_var("a.$scope", "v", VariableType::wire, 1), VCDTypeException);
+    EXPECT_THROW(writer->register_var("s", "n $end\n$var wire 1 ! evil", VariableType::wire, 1), TypeException);
+    EXPECT_THROW(writer->register_var("s", "a b", VariableType::wire, 1), TypeException);
+    EXPECT_THROW(writer->register_var("s", "$end", VariableType::wire, 1), TypeException);
+    EXPECT_THROW(writer->register_var("s\nx", "v", VariableType::wire, 1), TypeException);
+    EXPECT_THROW(writer->register_var("a..b", "v", VariableType::wire, 1), TypeException);
+    EXPECT_THROW(writer->register_var(".a", "v", VariableType::wire, 1), TypeException);
+    EXPECT_THROW(writer->register_var("a.", "v", VariableType::wire, 1), TypeException);
+    EXPECT_THROW(writer->register_var("a.$scope", "v", VariableType::wire, 1), TypeException);
     EXPECT_NO_THROW(writer->register_var("a.b", "data[7:0]", VariableType::wire, 8));
 }
 
 // Registration is not allowed after the first value change at a later time
-TEST_F(VCDWriterFixture, RegisterAfterDumping)
+TEST_F(WriterFixture, RegisterAfterDumping)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 1);
     writer->change(var, 1, "1");
-    EXPECT_THROW(writer->register_var("s", "w", VariableType::wire, 1), VCDPhaseException);
+    EXPECT_THROW(writer->register_var("s", "w", VariableType::wire, 1), PhaseException);
 }
 
 // The destructor closes the writer and never throws
-TEST_F(VCDWriterFixture, DestructorCloses)
+TEST_F(WriterFixture, DestructorCloses)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 1);
     writer->change(var, 1, "1");
@@ -865,7 +865,7 @@ TEST_F(VCDWriterFixture, DestructorCloses)
 }
 
 // Output larger than the writer's buffer is written completely and in order
-TEST_F(VCDWriterFixture, LargeOutput)
+TEST_F(WriterFixture, LargeOutput)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 64);
     std::string expected = HEADER +
@@ -887,7 +887,7 @@ TEST_F(VCDWriterFixture, LargeOutput)
 }
 
 // The buffered output reaches the file on flush()
-TEST_F(VCDWriterFixture, FlushWritesBufferedOutput)
+TEST_F(WriterFixture, FlushWritesBufferedOutput)
 {
     VarPtr var = writer->register_var("s", "v", VariableType::wire, 1);
     writer->change(var, 1, "1");
@@ -908,7 +908,7 @@ TEST_F(VCDWriterFixture, FlushWritesBufferedOutput)
 }
 
 // Deduplication keeps working while the value buffers are reused between vars
-TEST_F(VCDWriterFixture, ValueBuffersReuse)
+TEST_F(WriterFixture, ValueBuffersReuse)
 {
     VarPtr a = writer->register_var("s", "a", VariableType::wire, 4);
     VarPtr b = writer->register_var("s", "b", VariableType::wire, 4);
@@ -919,7 +919,7 @@ TEST_F(VCDWriterFixture, ValueBuffersReuse)
     EXPECT_TRUE(writer->change(a, 3, "0101"));
     EXPECT_TRUE(writer->change(b, 3, "1010"));
     EXPECT_FALSE(writer->change(a, 4, "101"));   // left-extended to "0101"
-    EXPECT_THROW(writer->change(b, 4, "10a0"), VCDTypeException);
+    EXPECT_THROW(writer->change(b, 4, "10a0"), TypeException);
     EXPECT_FALSE(writer->change(b, 4, "1010"));  // a failed change does not alter the value
     EXPECT_FALSE(writer->change("s", "a", 5, "0101"));
     EXPECT_TRUE(writer->change("s", "b", 5, "1111"));
@@ -945,13 +945,13 @@ TEST_F(VCDWriterFixture, ValueBuffersReuse)
 }
 
 // Characters are checked as ASCII, independently of the C locale
-TEST_F(VCDWriterFixture, NonAsciiValues)
+TEST_F(WriterFixture, NonAsciiValues)
 {
-    EXPECT_THROW(writer->register_var("s", "v\xC3\xA9", VariableType::wire, 1), VCDTypeException);
+    EXPECT_THROW(writer->register_var("s", "v\xC3\xA9", VariableType::wire, 1), TypeException);
     VarPtr str = writer->register_var("s", "str", VariableType::string, 0, "a");
     VarPtr vec = writer->register_var("s", "vec", VariableType::wire, 2);
-    EXPECT_THROW(writer->change(str, 1, "\xC3\xA9"), VCDTypeException);
-    EXPECT_THROW(writer->change(vec, 1, "\xD8" "1"), VCDTypeException);
+    EXPECT_THROW(writer->change(str, 1, "\xC3\xA9"), TypeException);
+    EXPECT_THROW(writer->change(vec, 1, "\xD8" "1"), TypeException);
     EXPECT_TRUE(writer->change(vec, 1, "XZ"));
 }
 
