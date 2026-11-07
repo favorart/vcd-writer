@@ -1,160 +1,115 @@
-#include <string>
-#include <cassert>
+#include "vcd_writer.h"
+
 #include <algorithm>
 #include <array>
-#include <iterator>
 #include <format>
 #include <fstream>
-#include <list>
+#include <iterator>
 #include <map>
 #include <unordered_map>
-#include <utility>
 #include <vector>
-#include "vcd_writer.h"
+
 #include "vcd_header.h"
 #include "vcd_utils.h"
 #include "vcd_variable.h"
 
-
-// -----------------------------
 namespace vcd {
 using namespace utils;
 
-// -----------------------------
-struct Scope;
-using ScopePtr = std::shared_ptr<Scope>;
-
-// -----------------------------
-struct Scope final
-{
-    std::string name;
-    ScopeType   type;
-    std::list<VarPtr> vars;
-
-    Scope(std::string_view name, ScopeType type) :
-        name(name), type(type) {}
-};
+namespace {
+constexpr std::array<const char*, size_t(ScopeType::_count_)> SCOPE_TYPES{ "begin", "fork", "function", "module", "task" };
+}
 
 // -----------------------------
 // State of a writer and its helpers
 struct Writer::Impl
 {
+    struct Scope
+    {
+        ScopeType type;
+        std::vector<const Variable*> vars;
+    };
+
     Impl(const std::string &filename, HeadPtr head, TimeStamp init_timestamp);
 
-    TimeStamp timestamp;
-    HeadPtr header;
+    std::ofstream file;
+    HeadPtr       header;  // until it is written
 
     // settings
     std::string scope_sep = ".";
     ScopeType   scope_def_type = ScopeType::module;
-    std::ofstream file;
-
-    // scope name -> scope
-    std::map<std::string, ScopePtr> scopes;
-    // (scope + '\0' + name) -> var
-    std::unordered_map<std::string, VarPtr> vars;
 
     // state
-    bool closed = false;
+    TimeStamp timestamp;
+    bool timestamp_printed = false;  // "#<timestamp>" is written
+    bool registering = true;         // the header is not written yet
     bool dumping = true;
-    bool registering = true;
-    bool timestamp_printed = false;
+    bool closed = false;
 
-    // registered vars and their last dumped values, indexed by var ident
-    std::vector<std::pair<VarPtr, VarValue>> values;
+    std::map<std::string, Scope> scopes;             // scope -> its variables
+    std::unordered_map<std::string, VarPtr> vars;    // scope + '\0' + name -> variable
+    std::vector<VarPtr> idents;                      // ident -> variable
+    std::vector<VarValue> values;                    // ident -> last value (change record)
 
-    // reusable buffers: no memory allocation per change in a steady state
-    std::string buf;     // formatted output not written to the file yet
+    // reused buffers: no memory allocation per change in a steady state
+    std::string buf;     // output not written to the file yet
     VarValue    record;  // change record of the current change
     std::string key;     // lookup key of change(scope, name)
     static constexpr size_t buf_limit = 64 * 1024;
 
-    //! Validate *ts* and move the current time to it
+    // throws PhaseException after close()
+    void check_open(const char *what) const;
+    // registered variable (throws PhaseException)
+    const VarPtr& find_var(const std::string &scope, const std::string &name, std::string &var_key) const;
+    // move the current time to *ts*, the header is written on the first move
     void advance(TimeStamp ts);
-    //! Write "#<timestamp>" once per timestamp
-    void print_timestamp();
-    void dump_off();
-    void dump_values(const char *keyword);
-    void scope_declaration(const std::string& name, ScopeType type);
-    //! Dump VCD header into file
-    void write_header();
-    //! Turn to dumping phase, no more variables regestration allowed
-    void finalize_registration();
-    //! Format into the output buffer
+    void set_dumping(bool on, TimeStamp ts);
+
+    // output: formatted into the buffer, written to the file when the buffer is full
     template <class... Args>
     void print(std::format_string<Args...> fmt, Args&&... args);
-    //! Append "<value><ident in hex>\n" into the output buffer (hot path, no std::format)
+    // "<record><ident>\n", the hot path: no std::format
     void print_change(const VarValue &value, unsigned ident);
-    //! Write the output buffer into the file when it is large enough
+    // "#<timestamp>\n" once per timestamp
+    void print_timestamp();
     void write_buf_if_full() { if (buf.size() >= buf_limit) write_buf(); }
     void write_buf();
-    //! Find a registered var (throws PhaseException), reuses a key buffer
-    const VarPtr& find_var(const std::string &scope, const std::string &name);
+
+    // "<keyword>" and the current values of all variables
+    void dump_values(const char *keyword);
+    // "$dumpoff" and 'x' for all variables that have such a state
+    void dump_off_values();
+    void write_header();
+    // write the header and the initial values, no more registration
+    void finalize_registration();
 };
 
 // -----------------------------
 Writer::Impl::Impl(const std::string &filename, HeadPtr head, TimeStamp init_timestamp) :
-    timestamp(init_timestamp),
+    file(filename, std::ios::out | std::ios::trunc | std::ios::binary),
     header(head ? std::move(head) : make_header()),
-    file(filename, std::ios::out | std::ios::trunc | std::ios::binary)
+    timestamp(init_timestamp)
 {
     if (!file)
         throw Exception{ std::format("Cannot open file '{}'", filename) };
-    // report write errors as exceptions
-    file.exceptions(std::ios::badbit | std::ios::failbit);
+    file.exceptions(std::ios::badbit | std::ios::failbit); // report write errors as exceptions
 }
 
 // -----------------------------
-Writer::Writer(std::string filename, HeadPtr &&header, TimeStamp init_timestamp) :
-    _impl(std::make_unique<Impl>(filename, std::move(header), init_timestamp))
-{}
-
-// -----------------------------
-Writer::~Writer()
+void Writer::Impl::check_open(const char *what) const
 {
-    try { close(nullptr); }
-    catch (...) {} // destructor must not throw
+    if (closed)
+        throw PhaseException{ std::format("Cannot {} after close()", what) };
 }
 
 // -----------------------------
-VarPtr Writer::register_var(const std::string &scope, const std::string &name, VariableType type,
-                               unsigned size, const VarValue &init, bool duplicate_names_check)
+const VarPtr& Writer::Impl::find_var(const std::string &scope, const std::string &name, std::string &var_key) const
 {
-    auto &d = *_impl;
-    if (d.closed)
-        throw PhaseException{ "Cannot register after close()" };
-    if (!d.registering)
-        throw PhaseException{ std::format("Cannot register new var '{}', registering finished", name) };
-
-    if (scope.empty() || name.empty())
-        throw TypeException{ std::format("Empty scope '{}' or name '{}'", scope, name) };
-    if (!is_valid_token(name))
-        throw TypeException{ std::format("Invalid var name '{}'", name) };
-    for (const auto &part : split(scope, d.scope_sep))
-        if (!is_valid_token(part))
-            throw TypeException{ std::format("Invalid scope '{}'", scope) };
-
-    std::string key;
-    make_var_key(key, scope, name);
-    if (duplicate_names_check && d.vars.find(key) != d.vars.end())
-        throw TypeException{ std::format("Duplicate var '{}' in scope '{}'", name, scope) };
-
-    auto pvar = std::make_shared<Variable>(name, type, size, unsigned(d.values.size()));
-    // events have no value, other vars validate the initial value ("x" of a real is 0)
-    VarValue record;
-    if (pvar->kind == Variable::Kind::real && init == VarValue{ Bit::undef })
-        pvar->change_record("0.0", record);
-    else if (pvar->kind != Variable::Kind::event)
-        pvar->change_record(init, record);
-
-    // Only alter state after all checks succeeded
-    auto it_scope = d.scopes.find(scope);
-    if (it_scope == d.scopes.end())
-        it_scope = d.scopes.emplace(scope, std::make_shared<Scope>(scope, d.scope_def_type)).first;
-    it_scope->second->vars.push_back(pvar);
-    d.vars.emplace(std::move(key), pvar);
-    d.values.emplace_back(pvar, std::move(record));
-    return pvar;
+    make_var_key(var_key, scope, name);
+    const auto it = vars.find(var_key);
+    if (it == vars.end())
+        throw PhaseException{ std::format("The var '{}' in scope '{}' does not exist", name, scope) };
+    return it->second;
 }
 
 // -----------------------------
@@ -162,25 +117,32 @@ void Writer::Impl::advance(TimeStamp ts)
 {
     if (ts < timestamp)
         throw PhaseException{ std::format("Out of order timestamp {} < {}", ts, timestamp) };
-    if (ts > timestamp)
-    {
-        if (registering)
-            finalize_registration();
-        timestamp = ts;
-        timestamp_printed = false;
-    }
+    if (ts == timestamp)
+        return;
+    if (registering)
+        finalize_registration();
+    timestamp = ts;
+    timestamp_printed = false;
 }
 
 // -----------------------------
-void Writer::Impl::print_timestamp()
+void Writer::Impl::set_dumping(bool on, TimeStamp ts)
 {
-    if (timestamp_printed)
+    check_open(on ? "dump_on()" : "dump_off()");
+    if (registering && ts == timestamp)
+    {   // the header is not written yet, `finalize_registration()` handles it
+        dumping = on;
         return;
-    buf += '#';
-    append_number(buf, timestamp, 10);
-    buf += '\n';
-    timestamp_printed = true;
-    write_buf_if_full();
+    }
+    advance(ts);
+    if (dumping == on)
+        return;
+    dumping = on;
+    print_timestamp();
+    if (on)
+        dump_values("$dumpon");
+    else
+        dump_off_values();
 }
 
 // -----------------------------
@@ -201,11 +163,21 @@ void Writer::Impl::print_change(const VarValue &value, unsigned ident)
 }
 
 // -----------------------------
+void Writer::Impl::print_timestamp()
+{
+    if (timestamp_printed)
+        return;
+    buf += '#';
+    append_number(buf, timestamp, 10);
+    buf += '\n';
+    timestamp_printed = true;
+    write_buf_if_full();
+}
+
+// -----------------------------
 void Writer::Impl::write_buf()
 {
-    if (buf.empty())
-        return;
-    // clear the buffer even on a write error, it is reported once
+    // the buffer is cleared even on a write error: the error is reported once
     std::string out;
     out.swap(buf);
     file.write(out.data(), std::streamsize(out.size()));
@@ -214,25 +186,145 @@ void Writer::Impl::write_buf()
 }
 
 // -----------------------------
+void Writer::Impl::dump_values(const char *keyword)
+{
+    print("{}\n", keyword);
+    for (const auto &var : idents)
+        if (var->kind != Variable::Kind::event)
+            print_change(values[var->ident], var->ident);
+    print("$end\n");
+}
+
+// -----------------------------
+void Writer::Impl::dump_off_values()
+{
+    print("$dumpoff\n");
+    for (const auto &var : idents)
+    {
+        if (var->kind == Variable::Kind::scalar)
+            print("x{:x}\n", var->ident);
+        else if (var->kind == Variable::Kind::vector)
+            print("bx {:x}\n", var->ident);
+    }
+    print("$end\n");
+}
+
+// -----------------------------
+void Writer::Impl::write_header()
+{
+    for (size_t i = 0; i < header->values.size(); ++i)
+        if (!header->values[i].empty())
+            print("{} {} $end\n", Header::keywords[i], indent_lines(header->values[i]));
+    header.reset();
+
+    // sort scopes by their hierarchical path, so a scope is followed by its children
+    std::vector<std::pair<std::vector<std::string>, const Scope*>> sorted;
+    sorted.reserve(scopes.size());
+    for (const auto &[name, scope] : scopes)
+        sorted.emplace_back(split(name, scope_sep), &scope);
+    std::sort(sorted.begin(), sorted.end(),
+              [](const auto &l, const auto &r) { return l.first < r.first; });
+
+    std::vector<std::string> opened;
+    for (const auto &[path, scope] : sorted)
+    {
+        // close the scopes which are not the ancestors of the current one
+        const auto common = std::mismatch(opened.begin(), opened.end(), path.begin(), path.end()).first;
+        for (auto n = opened.end() - common; n > 0; --n)
+            print("$upscope $end\n");
+        opened.erase(common, opened.end());
+        // open the (intermediate) scopes
+        for (size_t i = opened.size(); i < path.size(); ++i)
+        {
+            const auto type = (i + 1 == path.size()) ? scope->type : scope_def_type;
+            print("$scope {} {} $end\n", SCOPE_TYPES[size_t(type)], path[i]);
+            opened.push_back(path[i]);
+        }
+        for (const auto *var : scope->vars)
+            print("{}\n", var->declaration());
+    }
+    for (size_t i = 0; i < opened.size(); ++i)
+        print("$upscope $end\n");
+    print("$enddefinitions $end\n");
+}
+
+// -----------------------------
+void Writer::Impl::finalize_registration()
+{
+    write_header();
+    registering = false;
+    if (idents.empty())
+        return;
+    print_timestamp();
+    dump_values("$dumpvars");
+    if (!dumping)
+        dump_off_values();
+}
+
+// -----------------------------
+Writer::Writer(std::string filename, HeadPtr &&header, TimeStamp init_timestamp) :
+    _impl(std::make_unique<Impl>(filename, std::move(header), init_timestamp))
+{}
+
+// -----------------------------
+Writer::~Writer()
+{
+    try { close(); }
+    catch (...) {} // destructor must not throw
+}
+
+// -----------------------------
+VarPtr Writer::register_var(const std::string &scope, const std::string &name, VariableType type,
+                               unsigned size, const VarValue &init, bool duplicate_names_check)
+{
+    auto &d = *_impl;
+    d.check_open("register a variable");
+    if (!d.registering)
+        throw PhaseException{ std::format("Cannot register new var '{}', registering finished", name) };
+    if (!is_valid_token(name))
+        throw TypeException{ std::format("Invalid var name '{}'", name) };
+    for (const auto &part : split(scope, d.scope_sep))
+        if (!is_valid_token(part))
+            throw TypeException{ std::format("Invalid scope '{}'", scope) };
+
+    std::string var_key;
+    make_var_key(var_key, scope, name);
+    if (duplicate_names_check && d.vars.find(var_key) != d.vars.end())
+        throw TypeException{ std::format("Duplicate var '{}' in scope '{}'", name, scope) };
+
+    auto var = std::make_shared<Variable>(name, type, size, unsigned(d.idents.size()));
+    // events have no value, other vars validate the initial value ("x" of a real is 0)
+    VarValue init_record;
+    if (var->kind == Variable::Kind::real && init == VarValue{ Bit::undef })
+        var->change_record("0.0", init_record);
+    else if (var->kind != Variable::Kind::event)
+        var->change_record(init, init_record);
+
+    // only alter the state after all checks succeeded
+    d.scopes.try_emplace(scope, Impl::Scope{ d.scope_def_type, {} }).first->second.vars.push_back(var.get());
+    d.vars.emplace(std::move(var_key), var);
+    d.idents.push_back(var);
+    d.values.push_back(std::move(init_record));
+    return var;
+}
+
+// -----------------------------
 bool Writer::change(const VarPtr &var, TimeStamp timestamp, const VarValue &value)
 {
     auto &d = *_impl;
     if (!var)
         throw TypeException{ "Invalid Variable" };
-    if (d.closed)
-        throw PhaseException{ "Cannot change value after close()" };
+    d.check_open("change a value");
     if (timestamp < d.timestamp)
         throw PhaseException{ std::format("Out of order value change var '{}'", var->name) };
-    if (var->ident >= d.values.size() || d.values[var->ident].first != var)
+    if (var->ident >= d.idents.size() || d.idents[var->ident] != var)
         throw TypeException{ std::format("Variable '{}' do not registered", var->name) };
 
-    // validate the value before any state change
-    var->change_record(value, d.record);
+    var->change_record(value, d.record); // validate before any state change
     d.advance(timestamp);
 
     if (var->kind == Variable::Kind::event)
-    {
-        // events are not values: every change triggers the event
+    {   // events are not values: every change triggers the event
         if (d.registering)
             d.finalize_registration();
         if (d.dumping)
@@ -243,13 +335,12 @@ bool Writer::change(const VarPtr &var, TimeStamp timestamp, const VarValue &valu
         return true;
     }
 
-    auto &prev = d.values[var->ident].second;
+    auto &prev = d.values[var->ident];
     if (prev == d.record)
         return false;
-    // the old value's buffer is reused by the next change
-    prev.swap(d.record);
+    prev.swap(d.record); // the old value's buffer is reused by the next change
 
-    // dump it into file
+    // during registration the value goes to "$dumpvars"
     if (d.dumping && !d.registering)
     {
         d.print_timestamp();
@@ -261,96 +352,18 @@ bool Writer::change(const VarPtr &var, TimeStamp timestamp, const VarValue &valu
 // -----------------------------
 bool Writer::change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value)
 {
-    return change(_impl->find_var(scope, name), timestamp, value);
+    return change(_impl->find_var(scope, name, _impl->key), timestamp, value);
 }
 
 // -----------------------------
-const VarPtr& Writer::Impl::find_var(const std::string &scope, const std::string &name)
-{
-    make_var_key(key, scope, name);
-    auto it_var = vars.find(key);
-    if (it_var == vars.end())
-        throw PhaseException{ std::format("The var '{}' in scope '{}' does not exist", name, scope) };
-    return it_var->second;
-}
-
-// -----------------------------
-VarPtr Writer::var(const std::string &scope, const std::string &name) const
-{
-    std::string key;
-    make_var_key(key, scope, name);
-    auto it_var = _impl->vars.find(key);
-    if (it_var == _impl->vars.end())
-        throw PhaseException{ std::format("The var '{}' in scope '{}' does not exist", name, scope) };
-    return it_var->second;
-}
-
-// -----------------------------
-void Writer::set_scope_type(const std::string &scope, ScopeType scope_type)
-{
-    auto it = _impl->scopes.find(scope);
-    if (it == _impl->scopes.end())
-        throw PhaseException{ std::format("Such scope '{}' does not exist", scope) };
-    it->second->type = scope_type;
-}
-
-// -----------------------------
-void Writer::set_scope_default_type(ScopeType type) { _impl->scope_def_type = type; }
-
-// -----------------------------
-void Writer::set_scope_sep(const std::string &scope_sep)
-{
-    if (!scope_sep.empty())
-        _impl->scope_sep = scope_sep;
-}
-
-// -----------------------------
-void Writer::dump_off(TimeStamp timestamp)
-{
-    auto &d = *_impl;
-    if (d.closed)
-        throw PhaseException{ "Cannot dump_off() after close()" };
-    if (timestamp < d.timestamp)
-        throw PhaseException{ "Out of order dump_off()" };
-    if (d.registering && timestamp == d.timestamp)
-    {   // header is not written yet, `finalize_registration()` handles it
-        d.dumping = false;
-        return;
-    }
-    d.advance(timestamp);
-    if (!d.dumping)
-        return;
-    d.dump_off();
-    d.dumping = false;
-}
-
-// -----------------------------
-void Writer::dump_on(TimeStamp timestamp)
-{
-    auto &d = *_impl;
-    if (d.closed)
-        throw PhaseException{ "Cannot dump_on() after close()" };
-    if (timestamp < d.timestamp)
-        throw PhaseException{ "Out of order dump_on()" };
-    if (d.registering && timestamp == d.timestamp)
-    {   // header is not written yet, `finalize_registration()` handles it
-        d.dumping = true;
-        return;
-    }
-    d.advance(timestamp);
-    if (d.dumping)
-        return;
-    d.dumping = true;
-    d.print_timestamp();
-    d.dump_values("$dumpon");
-}
+void Writer::dump_off(TimeStamp timestamp) { _impl->set_dumping(false, timestamp); }
+void Writer::dump_on(TimeStamp timestamp) { _impl->set_dumping(true, timestamp); }
 
 // -----------------------------
 void Writer::flush(const TimeStamp *timestamp)
 {
     auto &d = *_impl;
-    if (d.closed)
-        throw PhaseException{ "Cannot flush() after close()" };
+    d.check_open("flush()");
     if (timestamp != nullptr && *timestamp > d.timestamp)
     {
         d.advance(*timestamp);
@@ -384,106 +397,29 @@ void Writer::close(const TimeStamp *timestamp)
 }
 
 // -----------------------------
-void Writer::Impl::dump_off()
+void Writer::set_scope_type(const std::string &scope, ScopeType type)
 {
-    print_timestamp();
-    print("$dumpoff\n");
-    for (const auto &p : values)
-    {
-        const auto ident = p.first->ident;
-        const auto &value = p.second;
-
-        if (value.empty() || value[0] == 'r' || value[0] == 's')
-        {} // events, real and string variables cannot have "x" state
-        else if (value[0] == 'b')
-        { print("bx {:x}\n", ident); }
-        else
-        { print("x{:x}\n", ident); }
-    }
-    print("$end\n");
+    const auto it = _impl->scopes.find(scope);
+    if (it == _impl->scopes.end())
+        throw PhaseException{ std::format("Such scope '{}' does not exist", scope) };
+    it->second.type = type;
 }
 
 // -----------------------------
-void Writer::Impl::dump_values(const char *keyword)
+void Writer::set_scope_default_type(ScopeType type) { _impl->scope_def_type = type; }
+
+// -----------------------------
+void Writer::set_scope_sep(const std::string &scope_sep)
 {
-    print("{:s}\n", keyword);
-    for (const auto &p : values)
-    {
-        if (p.second.empty()) // events have no value
-            continue;
-        print_change(p.second, p.first->ident);
-    }
-    print("$end\n");
+    if (!scope_sep.empty())
+        _impl->scope_sep = scope_sep;
 }
 
 // -----------------------------
-void Writer::Impl::scope_declaration(const std::string &name, ScopeType type)
+VarPtr Writer::var(const std::string &scope, const std::string &name) const
 {
-    const std::array<const char*, 5> SCOPE_TYPES = { "begin", "fork", "function", "module", "task" };
-    print("$scope {:s} {:s} $end\n", SCOPE_TYPES[int(type)], name);
+    std::string var_key;
+    return _impl->find_var(scope, name, var_key);
 }
 
-// -----------------------------
-void Writer::Impl::write_header()
-{
-    for (size_t i = 0; i < header->values.size(); ++i)
-        if (!header->values[i].empty())
-            print("{} {} $end\n", Header::keywords[i], indent_lines(header->values[i]));
-
-    // sort scopes by their hierarchical path, so a scope is followed by its children
-    std::vector<std::pair<std::vector<std::string>, const Scope*>> sorted;
-    sorted.reserve(scopes.size());
-    for (const auto &s : scopes)
-        sorted.emplace_back(split(s.first, scope_sep), s.second.get());
-    std::sort(sorted.begin(), sorted.end(),
-              [](const auto &l, const auto &r) { return l.first < r.first; });
-
-    std::vector<std::string> opened;
-    for (const auto &[path, scope] : sorted)
-    {
-        // close the scopes which are not the ancestors of the current one
-        size_t common = 0;
-        while (common < opened.size() && common < path.size() && opened[common] == path[common])
-            ++common;
-        while (opened.size() > common)
-        {
-            print("$upscope $end\n");
-            opened.pop_back();
-        }
-        // open the (intermediate) scopes
-        for (size_t i = opened.size(); i < path.size(); ++i)
-        {
-            const bool last = (i + 1 == path.size());
-            scope_declaration(path[i], last ? scope->type : scope_def_type);
-            opened.push_back(path[i]);
-        }
-        // dump variable declartion
-        for (const auto& var : scope->vars)
-            print("{:s}\n", var->declaration());
-    }
-    for (size_t i = 0; i < opened.size(); ++i)
-        print("$upscope $end\n");
-
-    print("$enddefinitions $end\n");
-    // do not need anymore
-    header.reset(nullptr);
 }
-
-// -----------------------------
-void Writer::Impl::finalize_registration()
-{
-    assert(registering);
-    write_header();
-    registering = false;
-    if (!values.empty())
-    {
-        print_timestamp();
-        dump_values("$dumpvars");
-        if (!dumping)
-            dump_off();
-    }
-}
-
-// -----------------------------
-} //end namespace vcd
-
