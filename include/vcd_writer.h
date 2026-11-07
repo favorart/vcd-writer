@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <exception>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -34,26 +34,19 @@ using TimeStamp = uint64_t;
 using VarValue = std::string;
 
 // -----------------------------
-class Exception : public std::exception
+struct Exception : std::runtime_error
 {
-public:
-    explicit Exception(const std::string & message) : m_message("VCD error: " + message) {}
-    [[nodiscard]]  const char* what() const noexcept override { return m_message.c_str(); }
-
-private:
-    const std::string m_message;
+    explicit Exception(const std::string &message) : std::runtime_error("VCD error: " + message) {}
 };
 
-class PhaseException : public Exception
+struct PhaseException : Exception
 {
-public:
-    explicit PhaseException(const std::string& message) : Exception(message) {}
+    using Exception::Exception;
 };
 
-class TypeException : public Exception
+struct TypeException : Exception
 {
-public:
-    explicit TypeException(const std::string& message) : Exception(message) {}
+    using Exception::Exception;
 };
 
 // -----------------------------
@@ -76,21 +69,19 @@ HeadPtr make_header(TimeScale     timescale_quan = TimeScale::one,
 // -----------------------------
 // Writer of a Value Change Dump file
 // A VCD file captures time-ordered changes to the value of variables
-class Writer
+class Writer final
 {
 public:
     // Takes ownership of *header* (a null header is replaced by the default one)
     Writer(std::string filename, HeadPtr &&header, TimeStamp init_timestamp = 0u);
     Writer(std::string filename, HeadPtr &header, TimeStamp init_timestamp = 0u)
         : Writer(std::move(filename), std::move(header), init_timestamp) {}
-    Writer(Writer&&) = delete;
     Writer(const Writer&) = delete;
     Writer& operator=(const Writer&) = delete;
-    Writer& operator=(Writer&&) = delete;
 
     // Never throws: errors on the implicit close are swallowed.
     // Call `close()` explicitly to observe them.
-    virtual ~Writer();
+    ~Writer();
 
     // Register a VCD variable and return its mark to change value further.
     // Remember, all VCD variables must be registered prior to any value changes.
@@ -98,10 +89,9 @@ public:
     // Scope and name must consist of printable non-whitespace characters only.
     VarPtr register_var(const std::string &scope,                  // Variable belongs within the hierarchical scope
                         const std::string &name,                   // Human-readable variable idetifier
-                        VariableType type = var_def_type,          // Verilog data type of variable
+                        VariableType type = VariableType::integer, // Verilog data type of variable
                         unsigned size = 0,                         // Size of variable, in bits
-                        const VarValue &init = {Bit::undef}, // Initial value (optional)
-                        bool duplicate_names_check = true);        // speed-up (optimisation)
+                        const VarValue &init = {Bit::undef});      // Initial value (optional)
 
     // Change variable's value in VCD stream.
     // Call this method, for all variables changed on this *timestamp*.
@@ -137,8 +127,6 @@ public:
     void set_scope_sep(const std::string& scope_sep);
     //! get VCD Variable (throws PhaseException if it is not registered)
     VarPtr var(const std::string &scope, const std::string &name) const;
-
-    static const VariableType var_def_type = VariableType::integer;
 
 private:
     struct Impl;

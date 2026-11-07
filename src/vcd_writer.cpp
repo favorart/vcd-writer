@@ -275,7 +275,7 @@ Writer::~Writer()
 
 // -----------------------------
 VarPtr Writer::register_var(const std::string &scope, const std::string &name, VariableType type,
-                               unsigned size, const VarValue &init, bool duplicate_names_check)
+                               unsigned size, const VarValue &init)
 {
     auto &d = *_impl;
     d.check_open("register a variable");
@@ -289,7 +289,7 @@ VarPtr Writer::register_var(const std::string &scope, const std::string &name, V
 
     std::string var_key;
     make_var_key(var_key, scope, name);
-    if (duplicate_names_check && d.vars.find(var_key) != d.vars.end())
+    if (d.vars.find(var_key) != d.vars.end())
         throw TypeException{ std::format("Duplicate var '{}' in scope '{}'", name, scope) };
 
     auto var = std::make_shared<Variable>(name, type, size, unsigned(d.idents.size()));
