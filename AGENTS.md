@@ -1,85 +1,84 @@
 # AGENTS.md
 
-Правила работы с репозиторием vcd-writer: C++20-библиотека записи файлов Value Change Dump (IEEE 1364-2005, §18.2).
-Применяются к любым изменениям — людьми и агентами.
+Rules for any change to vcd-writer, a C++20 library that writes Value Change Dump files (IEEE 1364-2005, §18.2).
 
-## Общение
+## Code
 
-- Отвечать и писать описания PR на русском языке. Код, комментарии в коде и сообщения коммитов — на английском.
+- Standard C++20 only. No platform-dependent code in the library. Compiler-specific flags live in CMake only.
+- The standard library instead of third-party dependencies (GoogleTest is used by the tests only).
+- Character checks are ASCII and locale-independent (no `std::tolower` / `std::isgraph`):
+  VCD identifiers are printable ASCII, and the result must not depend on the locale set by the host application.
 
-## Код
+### Naming
 
-### Язык и зависимости
-- Только стандартный C++20. Никакого платформенно-зависимого кода в библиотеке:
-  без `#ifdef _WIN32` / `_MSC_VER`, `localtime_r` / `localtime_s`, `__attribute__` и т. п.
-  Флаги конкретных компиляторов задаются только в CMake.
-- Стандартная библиотека вместо сторонних зависимостей (например, `std::format` вместо fmt).
-  GoogleTest допускается только для тестов.
-- Проверки символов — ASCII и не зависят от локали (`std::tolower` / `std::isgraph` не использовать).
+- C++ only: everything is in `namespace vcd`, so the names have no `VCD` prefix
+  (`vcd::Writer`, `vcd::Variable`, `vcd::Header`; the pimpl struct is `Impl`).
+- Types are UpperCamelCase.
+- Enumerators are lowercase everywhere.
+- Files are named `vcd_<purpose>.h` / `vcd_<purpose>.cpp`.
 
-### Публичный интерфейс (`include/vcd_writer.h`)
-- В заголовке только API: внутреннее состояние `VCDWriter` спрятано за pimpl (`struct Impl`).
-- Минимум инклюдов: только то, что нужно самим объявлениям API.
-- Каждая сущность API документирована в формате Doxygen (`@brief`, `@param`, `@return`, `@throws`).
-- У перечислений есть последний элемент `_count_` (число значений, первое недопустимое).
-  Размеры таблиц имён и проверки диапазона строятся от него, тесты используют его же —
-  без магических чисел, чтобы при изменении перечисления не править код и тесты.
-  Имя пишется строчными: `_COUNT_` — зарезервированный идентификатор.
+### Public interface (`include/`)
 
-### Структура исходников (`src/`)
-- Код разложен по смыслу: `vcd_writer` (методы писателя и его смысловые помощники),
-  `vcd_header` (заголовок VCD), `vcd_variable` (переменная: объявление и правила значений),
-  `vcd_utils` (вспомогательные функции). Внутренние заголовки лежат в `src/`.
-- Вспомогательные функции общего назначения — только в `vcd_utils`.
-- Внутри определения класса нет методов длиннее одной строки: остальные определяются вне класса.
-- Класс, у которого только публичные поля, — это `struct`.
-- Без лишних инклюдов и без лишних определений методов (например, прокладок «метод → такой же метод `Impl`»).
-- Без лишних параметров и настроек, не влияющих на результат.
+- The public header contains the API only: the writer's state is hidden behind pimpl.
+- Minimal includes: only what the API declarations themselves need.
+- Every API entity is documented with Doxygen (`@brief`, `@param`, `@return`, `@throws`).
+- Every enumeration ends with `_count_`: the number of values (the first invalid one).
+  Name tables and range checks are sized by it and the tests use it too: no magic numbers,
+  so changing an enumeration needs no changes in the code or the tests.
+  It is lowercase because `_COUNT_` is a reserved identifier.
 
-### Поведение
-- Вывод соответствует IEEE 1364-2005 §18.2: в частности, `$dumpvars`, `$dumpall`, `$dumpon`, `$dumpoff`
-  всегда завершаются `$end`; иерархия `$scope`/`$upscope` сбалансирована.
-- Вывод побайтно одинаков на всех платформах: файл открывается в бинарном режиме (LF),
-  порядок вывода детерминирован (не зависит от обхода хеш-таблиц).
-- Все входные данные проверяются до изменения состояния: неудачный вызов не оставляет следов.
-- Деструкторы не бросают исключений.
-- Горячий путь `change()` не выделяет память в установившемся режиме и не копирует `shared_ptr`.
-  Изменения, влияющие на производительность, сопровождаются замерами `bench/vcd_bench.cpp` до и после.
+### Source layout (`src/`)
 
-## Тесты
+- Code is split by meaning: each class in its own files; headers expose the minimum data needed.
+- General-purpose helpers live in `vcd_utils` only.
+- No method longer than one line inside a class definition: longer ones are defined outside the class.
+- A type with only public members is a `struct` (exceptions included).
+- No redundant includes and no redundant method definitions (e.g. forwarders "method → the same `Impl` method").
+- No parameters or settings that do not affect the result.
 
-- Каждое исправление бага сопровождается регрессионным тестом.
-- Каждый тест пишет в свой файл (`test_filename()`), тесты не зависят друг от друга.
-- Эталон `compare.vcd`: `main_exec` должен давать побайтно такой же `dump.vcd` на всех ОС.
-- Тесты проходят без предупреждений компилятора и под ASan + UBSan (`-DVCDWRITER_SANITIZE=ON`).
-- Перед PR проверять локально хотя бы MSVC и clang/libc++ (или GCC ≥ 13); в описании PR честно
-  указывать, что проверено локально, а что покрывает только CI.
+### Behavior
 
-## Сборка
+- The output conforms to IEEE 1364-2005 §18.2: in particular `$dumpvars`, `$dumpall`, `$dumpon`, `$dumpoff`
+  always end with `$end`, and `$scope` / `$upscope` are balanced.
+- The output is byte-identical on every platform: the file is opened in binary mode (LF),
+  the output order is deterministic (never depends on hash table iteration).
+- All input is validated before any state change: a failed call leaves no trace.
+- Destructors never throw.
+- The `change()` hot path does not allocate memory in a steady state and does not copy `shared_ptr`.
+  Changes that may affect performance come with `bench/vcd_bench.cpp` results before and after.
 
-- Поддерживаются обе сборки: CMake и Makefile.
-- Предупреждения включены (`/W4` для MSVC, `-Wall -Wextra -Wpedantic` для остальных), их должно быть ноль.
-- Опции CMake: `VCDWRITER_BUILD_MAIN`, `VCDWRITER_BUILD_TESTS`, `VCDWRITER_BUILD_BENCH`, `VCDWRITER_SANITIZE`.
+## Tests
+
+- Every bug fix comes with a regression test.
+- Every test writes its own file (`test_filename()`); tests do not depend on each other.
+- Reference output `compare.vcd`: `main_exec` must produce a byte-identical `dump.vcd` on every OS.
+- Tests pass with no compiler warnings and under ASan + UBSan (`-DVCDWRITER_SANITIZE=ON`).
+- Before a PR, check locally with at least MSVC and clang/libc++ (or GCC ≥ 13); the PR description states
+  what was checked locally and what is covered by CI only.
+
+## Build
+
+- Both builds are supported: CMake and Makefile.
+- Warnings are enabled (`/W4` for MSVC, `-Wall -Wextra -Wpedantic` for the others) and there must be none.
+- CMake options: `VCDWRITER_BUILD_MAIN`, `VCDWRITER_BUILD_TESTS`, `VCDWRITER_BUILD_BENCH`, `VCDWRITER_SANITIZE`.
 
 ## CI (GitHub Actions)
 
-- Раннеры и компиляторы — `*-latest`: версии latest не ниже требуемых (GCC ≥ 13, Clang/libc++ ≥ 17, MSVC ≥ 19.29).
-- Готовые actions вместо самописных скриптов, CI минимален:
-  тегирование — `mathieudutour/github-tag-action`, релиз — `softprops/action-gh-release`.
-- Права токена минимальные: `permissions: contents: read` на уровне workflow, `write` — только у задач, которым нужно.
-- Триггеры пишутся явно, чтобы было понятно по тексту: `pull_request: branches: [ "**" ]` с комментарием.
-- Тег и GitHub Release с Release-бинарниками (заголовок, статическая и разделяемая библиотеки для Linux,
-  Windows, macOS) создаются только для push в `master`, когда прошли все тесты и тег создан.
+- Runners and compilers are `*-latest`: latest is not older than required (GCC ≥ 13, Clang/libc++ ≥ 17, MSVC ≥ 19.29).
+- Ready-made actions instead of hand-written scripts.
+- Minimal token permissions, granted at the level that needs them, and only the ones needed.
+- Triggers are written explicitly, so they are clear from the text, or with a comment.
+- A tag and a GitHub Release with the Release binaries (header, static and shared libraries for Linux,
+  Windows, macOS) are made only for a push to `master`, after all tests passed and the tag was created.
 
-## Git и PR
+## Git and PRs
 
-- Один PR — одна тема (сборка/зависимости, исправления, производительность, рефакторинг, документация).
-  Зависимые PR делаются стеком.
-- Сообщения коммитов и заголовки PR — Conventional Commits (`fix:`, `feat:`, `perf:`, `refactor:`, `ci:`, `docs:`):
-  по ним github-tag-action выбирает следующую версию (`feat:` — minor, `BREAKING CHANGE` — major, иначе patch).
-- Без force-push: вместо rebase — merge.
-- В репозитории разрешены только squash и rebase merge. После squash-мержа базового PR стековый PR конфликтует:
-  влить `master` в его ветку, оставив версии ветки (`git checkout --ours`), и запушить.
-- Описание PR: «Зачем», что изменено, несовместимые изменения (⚠️), тесты, проверка
-  (локально / только CI); для производительности — таблица замеров.
-- Коммитить, пушить и мержить — только по просьбе владельца репозитория.
+- Changes go through pull requests; merging requires the owner's review and approval.
+- One PR, one topic (build/dependencies, fixes, performance, refactoring, docs). Dependent PRs are stacked.
+- Commit messages and PR titles follow Conventional Commits (`fix:`, `feat:`, `perf:`, `refactor:`, `ci:`, `docs:`):
+  github-tag-action picks the next version from them (`feat:` is minor, `BREAKING CHANGE` is major, otherwise patch).
+- No force-push: merge instead of rebase.
+- The repository allows squash and rebase merges only. After the base PR is squash-merged, a stacked PR conflicts:
+  merge `master` into its branch keeping the branch side (`git checkout --ours`) and push.
+- A PR description has: purpose, what changed, breaking changes (⚠️), tests, verification (locally / CI only);
+  benchmark results for performance changes.
