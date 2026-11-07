@@ -84,6 +84,24 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## C interface
+
+`include/vcd_writer_c.h` is a C interface over the same library: every function returns a `vcd_status`,
+and `vcd_last_error()` describes the last error.
+
+```c
+#include "vcd_writer_c.h"
+
+vcd_writer *writer = NULL;
+vcd_var *counter = NULL;
+vcd_open(&writer, "dump.vcd", vcd_timescale_one, vcd_unit_ns, NULL, NULL, NULL, 0);
+vcd_register_var(writer, "a.b.c", "counter", vcd_var_integer, 8, NULL, &counter);
+vcd_change(writer, counter, 0, "00001010", NULL);
+vcd_close(writer, NULL);
+```
+
+A C program links the library with a C++ linker (or with the C++ standard library).
+
 ## Run the benchmark
 
 ```
@@ -99,9 +117,9 @@ cmake --build build --config Release
 
 using namespace vcd;
 
-HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, utils::now());
+HeadPtr head = make_header(TimeScale::one, TimeScaleUnit::ns, utils::now());
 std::string filename = "dump.vcd";
-VCDWriter writer(filename, head);
+Writer writer(filename, head);
 
 VarPtr counter_var = writer.register_var("a.b.c", "counter", VariableType::integer, 8);
 VarPtr var_var = writer.register_var("a.b", "var", VariableType::integer, 8);

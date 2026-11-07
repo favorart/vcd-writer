@@ -1,229 +1,199 @@
+/**
+ * @file vcd_writer.h
+ * @brief Writer of Value Change Dump (VCD) files, IEEE 1364-2005, 18.2.
+ */
 #pragma once
 
 #include <cstdint>
-#include <format>
-#include <fstream>
-#include <iterator>
-#include <map>
-#include <unordered_map>
-#include <string>
-#include <cctype>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <utility>
-#include <vector>
 
 namespace vcd {
 namespace utils {
-// -----------------------------
+/// @return The current local time as "YYYY-MM-DD hh:mm:ss".
 std::string now();
-bool validate_date(const std::string&);
 }
 
 // -----------------------------
-// valid VCD scope types
+// `_count_` is not a value: it is the number of values (the first invalid one).
+
+/// Valid VCD scope types.
 enum class ScopeType : char
-{ begin, fork, function, module, task };
-// valid VCD variable types
+{ begin, fork, function, module, task, _count_ };
+
+/// Valid VCD variable types.
 enum class VariableType : char
 { wire, reg, string, parameter, integer, real, realtime, time, event,
-  supply0, supply1, tri, triand, trior, trireg, tri0, tri1, wand, wor };
-// valid timescale numbers
+  supply0, supply1, tri, triand, trior, trireg, tri0, tri1, wand, wor, _count_ };
+
+/// Valid timescale numbers.
 enum class TimeScale : char
-{ ONE = 1, TEN = 10, HUNDRED = 100, _COUNT_ };
-// valid timescale units
+{ one = 1, ten = 10, hundred = 100, _count_ };
+
+/// Valid timescale units.
 enum class TimeScaleUnit : char
 { s, ms, us, ns, ps, fs, _count_ };
-// -----------------------------
-enum VCDValues : char
-{ ONE='1', ZERO='0', UNDEF='x', HIGHV='z', _COUNT_ };
 
+/// 4-state values of a bit.
+enum Bit : char
+{ zero = '0', one = '1', undef = 'x', highz = 'z' };
+
+/// Simulation time, in timescale units.
 using TimeStamp = uint64_t;
+/// Value of a variable as text: bits ("1x0z"), a real number ("1.5") or a string.
 using VarValue = std::string;
 
 // -----------------------------
-class VCDException : public std::exception
+/// Base of all errors of the library.
+struct Exception : std::runtime_error
 {
-public:
-    explicit VCDException(const std::string & message) : m_message("VCD error: " + message) {}
-    [[nodiscard]]  const char* what() const noexcept override { return m_message.c_str(); }
-
-private:
-    const std::string m_message;
+    explicit Exception(const std::string &message) : std::runtime_error("VCD error: " + message) {}
 };
 
-class VCDPhaseException : public VCDException
+/// Wrong call order: registration after dumping started, change after close, past timestamp...
+struct PhaseException : Exception
 {
-public:
-    explicit VCDPhaseException(const std::string& message) : VCDException(message) {}
+    using Exception::Exception;
 };
 
-class VCDTypeException : public VCDException
+/// Invalid argument: name, value, size, type...
+struct TypeException : Exception
 {
-public:
-    explicit VCDTypeException(const std::string& message) : VCDException(message) {}
+    using Exception::Exception;
 };
 
 // -----------------------------
-struct VCDScope;
-using ScopePtr = std::shared_ptr<VCDScope>;
+struct Variable;
+/// Handle of a registered variable.
+using VarPtr = std::shared_ptr<Variable>;
 
-// -----------------------------
-class VCDVariable;
-using VarPtr = std::shared_ptr<VCDVariable>;
+struct Header;
+/// Deleter of the opaque Header.
+struct HeaderDeleter { void operator()(Header *p) const; };
+/// Header of a VCD file, made by make_header().
+using HeadPtr = std::unique_ptr<Header, HeaderDeleter>;
 
-// -----------------------------
-struct VCDHeader;
-struct VCDHeaderDeleter { void operator()(VCDHeader *p); };
-using HeadPtr = std::unique_ptr<VCDHeader, VCDHeaderDeleter>;
-
-// -----------------------------
-// Header values (date, comment, version) must not contain the "$end" keyword.
-HeadPtr makeVCDHeader(TimeScale     timescale_quan = TimeScale::ONE,
+/**
+ * @brief Make a validated VCD header.
+ * @param timescale_quan Number of the timescale: 1, 10 or 100.
+ * @param timescale_unit Unit of the timescale.
+ * @param date    "YYYY-MM-DD hh:mm:ss" or empty (no `$date` section).
+ * @param comment Free text, may be multi-line (empty: no `$comment` section).
+ * @param version Free text, may be multi-line (empty: no `$version` section).
+ * @throws TypeException Invalid timescale or date, a value contains "$end".
+ */
+HeadPtr make_header(TimeScale     timescale_quan = TimeScale::one,
                       TimeScaleUnit timescale_unit = TimeScaleUnit::ns,
-                      const std::string& date = utils::now(),
-                      const std::string& comment = "",
-                      const std::string& version = "");
+                      const std::string &date = utils::now(),
+                      const std::string &comment = "",
+                      const std::string &version = "");
 
 // -----------------------------
-// Writer of a Value Change Dump file
-// A VCD file captures time-ordered changes to the value of variables
-class VCDWriter
+/**
+ * @brief Writer of a Value Change Dump file.
+ *
+ * A VCD file captures time-ordered changes to the value of variables.
+ * Register all variables first, then change their values with non-decreasing timestamps.
+ * The output is buffered: call flush() or close() to write it to the file.
+ */
+class Writer final
 {
 public:
-    // Takes ownership of *header* (a null header is replaced by the default one)
-    VCDWriter(std::string filename, HeadPtr &&header, TimeStamp init_timestamp = 0u);
-    VCDWriter(std::string filename, HeadPtr &header, TimeStamp init_timestamp = 0u)
-        : VCDWriter(std::move(filename), std::move(header), init_timestamp) {}
-    VCDWriter(VCDWriter&&) = delete;
-    VCDWriter(const VCDWriter&) = delete;
-    VCDWriter& operator=(const VCDWriter&) = delete;
-    VCDWriter& operator=(VCDWriter&&) = delete;
+    /**
+     * @brief Create (truncate) the file.
+     * @param filename       Output file.
+     * @param header         Header, the writer takes its ownership (null: the default one).
+     * @param init_timestamp Time of the initial values (`$dumpvars`).
+     * @throws Exception The file can't be opened.
+     */
+    Writer(std::string filename, HeadPtr &&header, TimeStamp init_timestamp = 0u);
+    /// @copydoc Writer(std::string, HeadPtr&&, TimeStamp)
+    Writer(std::string filename, HeadPtr &header, TimeStamp init_timestamp = 0u)
+        : Writer(std::move(filename), std::move(header), init_timestamp) {}
+    Writer(const Writer&) = delete;
+    Writer& operator=(const Writer&) = delete;
 
-    // Never throws: errors on the implicit close are swallowed.
-    // Call `close()` explicitly to observe them.
-    virtual ~VCDWriter();
+    /// @brief Close the file. Never throws: call close() explicitly to observe the errors.
+    ~Writer();
 
-    // Register a VCD variable and return its mark to change value further.
-    // Remember, all VCD variables must be registered prior to any value changes.
-    // Note, *size* may be `0`, some types ("int", "real", "event") have a default size.
-    // Scope and name must consist of printable non-whitespace characters only.
-    VarPtr register_var(const std::string &scope,                  // Variable belongs within the hierarchical scope
-                        const std::string &name,                   // Human-readable variable idetifier
-                        VariableType type = var_def_type,          // Verilog data type of variable
-                        unsigned size = 0,                         // Size of variable, in bits
-                        const VarValue &init = {VCDValues::UNDEF}, // Initial value (optional)
-                        bool duplicate_names_check = true);        // speed-up (optimisation)
+    /**
+     * @brief Register a variable.
+     *
+     * All variables must be registered before any value change at a later timestamp.
+     * @param scope Hierarchical scope, e.g. "top.cpu" (see set_scope_sep()).
+     * @param name  Name of the variable in the scope.
+     * @param type  Verilog data type.
+     * @param size  Size in bits; `0` for the default size of integer, time, real,
+     *              realtime (64), string and event (1). Other types require it.
+     * @param init  Initial value (`x` of a real is 0).
+     * @return Handle to change the value.
+     * @throws TypeException  Invalid scope or name (only printable non-whitespace characters),
+     *                           duplicate variable, missing size, invalid initial value.
+     * @throws PhaseException Registration is finished or the writer is closed.
+     */
+    VarPtr register_var(const std::string &scope,
+                        const std::string &name,
+                        VariableType type = VariableType::integer,
+                        unsigned size = 0,
+                        const VarValue &init = { Bit::undef });
 
-    // Change variable's value in VCD stream.
-    // Call this method, for all variables changed on this *timestamp*.
-    // It is okay to call it multiple times with the same *timestamp*,
-    // but never call with a past *timestamp*
-    // Return:  *true* if new_value is dumped into VCD file,
-    //         *false* if new_value is not changed from priveios *timestamp* for a given var
-    // Events are never deduplicated: every call triggers the event.
-    bool change(const VarPtr &var, TimeStamp timestamp, const VarValue &value)
-    { return _change(var, timestamp, value); }
-
+    /**
+     * @brief Change the value of a variable.
+     * @param var       Variable registered in this writer.
+     * @param timestamp Current or a later time (never a past one).
+     * @param value     Bits of a scalar or a vector (shorter vectors are left-extended,
+     *                  empty is `x`), a real number or a non-empty string without whitespace.
+     * @return true if the value is written, false if it equals the previous one.
+     *         Events are never deduplicated: every call triggers the event.
+     * @throws TypeException  Invalid value, the variable is not registered in this writer.
+     * @throws PhaseException Past timestamp or the writer is closed.
+     */
+    bool change(const VarPtr &var, TimeStamp timestamp, const VarValue &value);
+    /// @brief Change the value of the variable *name* in *scope*.
+    /// @copydetails change(const VarPtr&, TimeStamp, const VarValue&)
     bool change(const std::string &scope, const std::string &name, TimeStamp timestamp, const VarValue &value);
 
-    // Suspend dumping to VCD file
+    /// @brief Suspend dumping (`$dumpoff`) from *timestamp*.
     void dump_off(TimeStamp timestamp);
-    // Resume dumping to VCD file
+    /// @brief Resume dumping (`$dumpon` with the current values) from *timestamp*.
     void dump_on(TimeStamp timestamp);
 
-    // Flush any buffered VCD data to output file.
-    // If the VCD header has not already been written, calling `flush()` will force
-    // the header to be written thus disallowing any further variable registrations.
-    // If *timestamp* is given, it is written to the file (if later than the current one).
+    /**
+     * @brief Write the buffered output to the file.
+     *
+     * Writes the header if it is not written yet: no more variables can be registered.
+     * @param timestamp A later time to write, optional.
+     * @throws PhaseException The writer is closed.
+     */
     void flush(const TimeStamp *timestamp = nullptr);
-    // Close VCD writer. Any buffered VCD data is flushed to the output file
-    // and the output file is closed.
-    // After `close()`, NO variable registration or value changes will be accepted.
+    /**
+     * @brief Flush and close the file.
+     *
+     * No registration or value change is accepted after it; a repeated call does nothing.
+     * @param timestamp A later time to write, optional.
+     */
     void close(const TimeStamp *timestamp = nullptr);
 
-    //! VCD viewer applications may display different scope types differently
-    void set_scope_type(const std::string& scope, ScopeType);
+    /// @brief Set the type of an existing *scope* (viewers may display them differently).
+    /// @throws PhaseException No such scope.
+    void set_scope_type(const std::string &scope, ScopeType type);
+    /// @brief Type of the scopes registered further (default: module).
+    void set_scope_default_type(ScopeType type);
+    /// @brief Separator of the scope names in a hierarchical scope (default: "."); empty is ignored.
+    void set_scope_sep(const std::string &scope_sep);
 
-    void set_scope_default_type(ScopeType type)
-    { _scope_def_type = type; }
-
-    void set_scope_sep(const std::string& scope_sep)
-    {
-        if (scope_sep.empty() || scope_sep == _scope_sep)
-            return;
-        _scope_sep = scope_sep;
-    }
-    //! get VCD Variable (throws VCDPhaseException if it is not registered)
+    /// @return The variable *name* in *scope*.
+    /// @throws PhaseException The variable is not registered.
     VarPtr var(const std::string &scope, const std::string &name) const;
 
-    static const VariableType var_def_type = VariableType::integer;
-
-protected:
-    bool _change(const VarPtr&, TimeStamp, const VarValue&);
-    //! Validate *timestamp* and move the current time to it
-    void _advance(TimeStamp timestamp);
-    //! Write "#<timestamp>" once per timestamp
-    void _print_timestamp();
-    void _dump_off();
-    void _dump_values(const char *keyword);
-    void _scope_declaration(const std::string& name, ScopeType type);
-    //! Dump VCD header into file
-    void _write_header();
-    //! Turn to dumping phase, no more variables regestration allowed
-    void _finalize_registration();
-    //! Format into the output buffer
-    template <class... Args>
-    void _print(std::format_string<Args...> fmt, Args&&... args)
-    {
-        std::format_to(std::back_inserter(_buf), fmt, std::forward<Args>(args)...);
-        _write_buf_if_full();
-    }
-    //! Append "<value><ident in hex>\n" into the output buffer (hot path, no std::format)
-    void _print_change(const VarValue &value, unsigned ident);
-    //! Write the output buffer into the file when it is large enough
-    void _write_buf_if_full()
-    {
-        if (_buf.size() >= buf_limit)
-            _write_buf();
-    }
-    void _write_buf();
-    //! Find a registered var (throws VCDPhaseException), reuses a key buffer
-    const VarPtr& _find_var(const std::string &scope, const std::string &name);
-
-    static constexpr size_t buf_limit = 64 * 1024;
-
 private:
-    TimeStamp _timestamp;
-    HeadPtr _header;
-
-    // settings
-    std::string _scope_sep;
-    ScopeType   _scope_def_type{};
-    std::string _filename;
-    std::ofstream _ofile;
-
-    // scope name -> scope
-    std::map<std::string, ScopePtr> _scopes;
-    // (scope + '\0' + name) -> var
-    std::unordered_map<std::string, VarPtr> _vars;
-
-    // state
-    bool _closed{};
-    bool _dumping{};
-    bool _registering{};
-    bool _timestamp_printed{};
-
-    // registered vars and their last dumped values, indexed by var ident
-    std::vector<std::pair<VarPtr, VarValue>> _values;
-
-    // reusable buffers: no memory allocation per change in a steady state
-    std::string _buf;     // formatted output not written to the file yet
-    VarValue    _record;  // change record of the current change
-    std::string _key;     // lookup key of change(scope, name)
+    struct Impl;
+    std::unique_ptr<Impl> _impl;
 };
 
-// -----------------------------
-using WriterPtr = std::shared_ptr<VCDWriter>;
+/// Shared handle of a writer.
+using WriterPtr = std::shared_ptr<Writer>;
 
 }
-

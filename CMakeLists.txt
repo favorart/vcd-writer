@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(vcdwriter LANGUAGES CXX)
+project(vcdwriter LANGUAGES C CXX)
 
 # Build options
 option(VCDWRITER_BUILD_MAIN "Build the main executable" ON)
@@ -54,7 +54,10 @@ endif()
 
 set(SOURCE_FILES
   "${SRC_PATH}/vcd_writer.cpp"
+  "${SRC_PATH}/vcd_header.cpp"
+  "${SRC_PATH}/vcd_variable.cpp"
   "${SRC_PATH}/vcd_utils.cpp"
+  "${SRC_PATH}/vcd_writer_c.cpp"
 )
 
 # Common settings of the project targets: C++20, warnings, sanitizers
@@ -104,6 +107,16 @@ if (VCDWRITER_BUILD_TESTS AND EXISTS "${TEST_PATH}/vcd_tests.cpp")
   target_link_libraries(test_exec PRIVATE vcdwriter_static GTest::gtest)
   vcdwriter_setup_target(test_exec)
   add_test(NAME vcdwriter_tests COMMAND test_exec WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+endif()
+
+# Test of the C interface, compiled as C (optional)
+if (VCDWRITER_BUILD_TESTS)
+  add_executable(c_api_test "${TEST_PATH}/c_api_test.c")
+  set_target_properties(c_api_test PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON LINKER_LANGUAGE CXX)
+  target_link_libraries(c_api_test PRIVATE vcdwriter_static)
+  vcdwriter_setup_target(c_api_test)
+  add_test(NAME vcdwriter_c_api_test COMMAND c_api_test "${CMAKE_CURRENT_SOURCE_DIR}/compare.vcd"
+           WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 endif()
 
 # Benchmark (optional)
