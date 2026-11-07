@@ -18,6 +18,13 @@ using namespace utils;
 
 namespace {
 constexpr std::array<const char*, size_t(ScopeType::_count_)> SCOPE_TYPES{ "begin", "fork", "function", "module", "task" };
+
+ScopeType checked(ScopeType type)
+{
+    if (type < ScopeType::begin || type >= ScopeType::_count_)
+        throw TypeException{ std::format("Invalid scope type {}", int(type)) };
+    return type;
+}
 }
 
 // -----------------------------
@@ -402,11 +409,11 @@ void Writer::set_scope_type(const std::string &scope, ScopeType type)
     const auto it = _impl->scopes.find(scope);
     if (it == _impl->scopes.end())
         throw PhaseException{ std::format("Such scope '{}' does not exist", scope) };
-    it->second.type = type;
+    it->second.type = checked(type);
 }
 
 // -----------------------------
-void Writer::set_scope_default_type(ScopeType type) { _impl->scope_def_type = type; }
+void Writer::set_scope_default_type(ScopeType type) { _impl->scope_def_type = checked(type); }
 
 // -----------------------------
 void Writer::set_scope_sep(const std::string &scope_sep)

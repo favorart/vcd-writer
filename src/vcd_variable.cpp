@@ -18,6 +18,8 @@ constexpr std::array<const char*, size_t(VariableType::_count_)> VAR_TYPES{
 // *size* or the default size of *type*
 unsigned size_of(VariableType type, unsigned size, const std::string &name)
 {
+    if (type < VariableType::wire || type >= VariableType::_count_)
+        throw TypeException{ std::format("Invalid type {} of var '{}'", int(type), name) };
     switch (type)
     {
     case VariableType::integer:
