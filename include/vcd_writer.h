@@ -29,56 +29,56 @@ enum class VariableType : char
   supply0, supply1, tri, triand, trior, trireg, tri0, tri1, wand, wor };
 // valid timescale numbers
 enum class TimeScale : char
-{ ONE = 1, TEN = 10, HUNDRED = 100, _COUNT_ };
+{ one = 1, ten = 10, hundred = 100, _count_ };
 // valid timescale units
 enum class TimeScaleUnit : char
 { s, ms, us, ns, ps, fs, _count_ };
 // -----------------------------
-enum VCDValues : char
-{ ONE='1', ZERO='0', UNDEF='x', HIGHV='z', _COUNT_ };
+enum Bit : char
+{ one='1', zero='0', undef='x', highz='z', _count_ };
 
 using TimeStamp = uint64_t;
 using VarValue = std::string;
 
 // -----------------------------
-class VCDException : public std::exception
+class Exception : public std::exception
 {
 public:
-    explicit VCDException(const std::string & message) : m_message("VCD error: " + message) {}
+    explicit Exception(const std::string & message) : m_message("VCD error: " + message) {}
     [[nodiscard]]  const char* what() const noexcept override { return m_message.c_str(); }
 
 private:
     const std::string m_message;
 };
 
-class VCDPhaseException : public VCDException
+class PhaseException : public Exception
 {
 public:
-    explicit VCDPhaseException(const std::string& message) : VCDException(message) {}
+    explicit PhaseException(const std::string& message) : Exception(message) {}
 };
 
-class VCDTypeException : public VCDException
+class TypeException : public Exception
 {
 public:
-    explicit VCDTypeException(const std::string& message) : VCDException(message) {}
+    explicit TypeException(const std::string& message) : Exception(message) {}
 };
 
 // -----------------------------
-struct VCDScope;
-using ScopePtr = std::shared_ptr<VCDScope>;
+struct Scope;
+using ScopePtr = std::shared_ptr<Scope>;
 
 // -----------------------------
-class VCDVariable;
-using VarPtr = std::shared_ptr<VCDVariable>;
+class Variable;
+using VarPtr = std::shared_ptr<Variable>;
 
 // -----------------------------
-struct VCDHeader;
-struct VCDHeaderDeleter { void operator()(VCDHeader *p); };
-using HeadPtr = std::unique_ptr<VCDHeader, VCDHeaderDeleter>;
+struct Header;
+struct HeaderDeleter { void operator()(Header *p); };
+using HeadPtr = std::unique_ptr<Header, HeaderDeleter>;
 
 // -----------------------------
 // Header values (date, comment, version) must not contain the "$end" keyword.
-HeadPtr makeVCDHeader(TimeScale     timescale_quan = TimeScale::ONE,
+HeadPtr make_header(TimeScale     timescale_quan = TimeScale::one,
                       TimeScaleUnit timescale_unit = TimeScaleUnit::ns,
                       const std::string& date = utils::now(),
                       const std::string& comment = "",
@@ -87,21 +87,21 @@ HeadPtr makeVCDHeader(TimeScale     timescale_quan = TimeScale::ONE,
 // -----------------------------
 // Writer of a Value Change Dump file
 // A VCD file captures time-ordered changes to the value of variables
-class VCDWriter
+class Writer
 {
 public:
     // Takes ownership of *header* (a null header is replaced by the default one)
-    VCDWriter(std::string filename, HeadPtr &&header, TimeStamp init_timestamp = 0u);
-    VCDWriter(std::string filename, HeadPtr &header, TimeStamp init_timestamp = 0u)
-        : VCDWriter(std::move(filename), std::move(header), init_timestamp) {}
-    VCDWriter(VCDWriter&&) = delete;
-    VCDWriter(const VCDWriter&) = delete;
-    VCDWriter& operator=(const VCDWriter&) = delete;
-    VCDWriter& operator=(VCDWriter&&) = delete;
+    Writer(std::string filename, HeadPtr &&header, TimeStamp init_timestamp = 0u);
+    Writer(std::string filename, HeadPtr &header, TimeStamp init_timestamp = 0u)
+        : Writer(std::move(filename), std::move(header), init_timestamp) {}
+    Writer(Writer&&) = delete;
+    Writer(const Writer&) = delete;
+    Writer& operator=(const Writer&) = delete;
+    Writer& operator=(Writer&&) = delete;
 
     // Never throws: errors on the implicit close are swallowed.
     // Call `close()` explicitly to observe them.
-    virtual ~VCDWriter();
+    virtual ~Writer();
 
     // Register a VCD variable and return its mark to change value further.
     // Remember, all VCD variables must be registered prior to any value changes.
@@ -111,7 +111,7 @@ public:
                         const std::string &name,                   // Human-readable variable idetifier
                         VariableType type = var_def_type,          // Verilog data type of variable
                         unsigned size = 0,                         // Size of variable, in bits
-                        const VarValue &init = {VCDValues::UNDEF}, // Initial value (optional)
+                        const VarValue &init = {Bit::undef}, // Initial value (optional)
                         bool duplicate_names_check = true);        // speed-up (optimisation)
 
     // Change variable's value in VCD stream.
@@ -153,7 +153,7 @@ public:
             return;
         _scope_sep = scope_sep;
     }
-    //! get VCD Variable (throws VCDPhaseException if it is not registered)
+    //! get VCD Variable (throws PhaseException if it is not registered)
     VarPtr var(const std::string &scope, const std::string &name) const;
 
     static const VariableType var_def_type = VariableType::integer;
@@ -187,7 +187,7 @@ protected:
             _write_buf();
     }
     void _write_buf();
-    //! Find a registered var (throws VCDPhaseException), reuses a key buffer
+    //! Find a registered var (throws PhaseException), reuses a key buffer
     const VarPtr& _find_var(const std::string &scope, const std::string &name);
 
     static constexpr size_t buf_limit = 64 * 1024;
@@ -223,7 +223,7 @@ private:
 };
 
 // -----------------------------
-using WriterPtr = std::shared_ptr<VCDWriter>;
+using WriterPtr = std::shared_ptr<Writer>;
 
 }
 

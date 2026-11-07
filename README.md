@@ -99,9 +99,9 @@ cmake --build build --config Release
 
 using namespace vcd;
 
-HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, utils::now());
+HeadPtr head = make_header(TimeScale::one, TimeScaleUnit::ns, utils::now());
 std::string filename = "dump.vcd";
-VCDWriter writer(filename, head);
+Writer writer(filename, head);
 
 VarPtr counter_var = writer.register_var("a.b.c", "counter", VariableType::integer, 8);
 VarPtr var_var = writer.register_var("a.b", "var", VariableType::integer, 8);

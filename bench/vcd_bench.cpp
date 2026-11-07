@@ -1,4 +1,4 @@
-// Micro-benchmark of VCDWriter hot paths.
+// Micro-benchmark of Writer hot paths.
 // Usage: vcd_bench [output_dir]   (default: current directory)
 #include <algorithm>
 #include <chrono>
@@ -56,7 +56,7 @@ int main(int argc, char **argv)
         vec_values[t] = bits(t * 2654435761u, WIDTH);
     const std::string scalars[2] = { "0", "1" };
 
-    auto register_all = [&](VCDWriter &w, std::vector<VarPtr> &vec, std::vector<VarPtr> &sc) {
+    auto register_all = [&](Writer &w, std::vector<VarPtr> &vec, std::vector<VarPtr> &sc) {
         for (unsigned i = 0; i < VARS; ++i)
         {
             const std::string scope = "top.m" + std::to_string(i % 50);
@@ -67,8 +67,8 @@ int main(int argc, char **argv)
 
     // every var changes on every step
     measure("change(VarPtr) all changed", size_t(2) * VARS * STEPS, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
-        VCDWriter w(file, head);
+        HeadPtr head = make_header(TimeScale::one, TimeScaleUnit::ns, "bench");
+        Writer w(file, head);
         std::vector<VarPtr> vec, sc;
         register_all(w, vec, sc);
         for (unsigned t = 0; t < STEPS; ++t)
@@ -81,8 +81,8 @@ int main(int argc, char **argv)
 
     // values do not change: only validation + deduplication, nothing is written
     measure("change(VarPtr) unchanged", size_t(2) * VARS * STEPS, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
-        VCDWriter w(file, head);
+        HeadPtr head = make_header(TimeScale::one, TimeScaleUnit::ns, "bench");
+        Writer w(file, head);
         std::vector<VarPtr> vec, sc;
         register_all(w, vec, sc);
         for (unsigned t = 0; t < STEPS; ++t)
@@ -95,8 +95,8 @@ int main(int argc, char **argv)
 
     // short values are left-extended
     measure("change(VarPtr) short values", size_t(VARS) * STEPS, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
-        VCDWriter w(file, head);
+        HeadPtr head = make_header(TimeScale::one, TimeScaleUnit::ns, "bench");
+        Writer w(file, head);
         std::vector<VarPtr> vec, sc;
         register_all(w, vec, sc);
         for (unsigned t = 0; t < STEPS; ++t)
@@ -112,8 +112,8 @@ int main(int argc, char **argv)
         names[i] = "v" + std::to_string(i);
     }
     measure("change(scope, name)", size_t(VARS) * STEPS, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
-        VCDWriter w(file, head);
+        HeadPtr head = make_header(TimeScale::one, TimeScaleUnit::ns, "bench");
+        Writer w(file, head);
         std::vector<VarPtr> vec, sc;
         register_all(w, vec, sc);
         for (unsigned t = 0; t < STEPS; ++t)
@@ -124,8 +124,8 @@ int main(int argc, char **argv)
     // registration of many vars + header
     constexpr unsigned REG = 100000;
     measure("register_var + header", REG, runs, [&] {
-        HeadPtr head = makeVCDHeader(TimeScale::ONE, TimeScaleUnit::ns, "bench");
-        VCDWriter w(file, head);
+        HeadPtr head = make_header(TimeScale::one, TimeScaleUnit::ns, "bench");
+        Writer w(file, head);
         for (unsigned i = 0; i < REG; ++i)
             w.register_var("top.a" + std::to_string(i % 100) + ".b" + std::to_string(i % 7),
                            "v" + std::to_string(i), VariableType::wire, 8);
