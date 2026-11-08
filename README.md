@@ -1,8 +1,10 @@
 # vcd-writer
 
-A C++20 library that writes Value Change Dump (VCD) files as specified in IEEE 1364-2005, §18.2.
-It started as a port of the [pyvcd](https://github.com/SanDisk-Open-Source/pyvcd) writer
-and keeps its model: register the variables, then change their values with non-decreasing timestamps.
+Port PyVCD package from python to C++
+
+Visit [PyVCD on GitHub](https://github.com/SanDisk-Open-Source/pyvcd/).
+
+It writes Value Change Dump (VCD) files as specified in IEEE 1364-2005.
 
 ## VCD standard support
 
