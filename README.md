@@ -1,10 +1,77 @@
 # vcd-writer
 
-Port PyVCD package from python to C++
+A C++20 library that writes Value Change Dump (VCD) files as specified in IEEE 1364-2005, §18.2.
+It started as a port of the [pyvcd](https://github.com/SanDisk-Open-Source/pyvcd) writer
+and keeps its model: register the variables, then change their values with non-decreasing timestamps.
 
-Visit [PyVCD on GitHub](https://github.com/SanDisk-Open-Source/pyvcd/).
+## VCD standard support
 
-It writes Value Change Dump (VCD) files as specified in IEEE 1364-2005.
+Four-state VCD, IEEE 1364-2005 §18.2.
+
+| Feature | Status | Notes |
+|---|---|---|
+| `$date` | ✅ | `YYYY-MM-DD hh:mm:ss` (validated) or omitted |
+| `$version` | ✅ | free text, multi-line, or omitted |
+| `$timescale` | ✅ | `1`/`10`/`100` × `s`, `ms`, `us`, `ns`, `ps`, `fs` |
+| `$comment` in the header | ✅ | free text, multi-line, or omitted |
+| `$comment` among the value changes | ❌ | |
+| `$scope` / `$upscope` | ✅ | `begin`, `fork`, `function`, `module`, `task`; always balanced |
+| `$var` types | ✅ | all 18: `event`, `integer`, `parameter`, `real`, `realtime`, `reg`, `supply0`, `supply1`, `time`, `tri`, `triand`, `trior`, `trireg`, `tri0`, `tri1`, `wand`, `wire`, `wor` |
+| `$var` reference with a bit select / range (`data [7:0]`) | ❌ | the reference is the name only |
+| Several `$var` with one identifier code (aliases) | ❌ | every variable has its own code |
+| Identifier codes | ✅ | printable ASCII: hexadecimal numbers (`0`, `1`, … `a`, `10`, …) |
+| `$enddefinitions` | ✅ | |
+| Simulation time `#<n>` | ✅ | decimal, non-decreasing (a past timestamp throws) |
+| `$dumpvars` | ✅ | initial values of all variables, always ends with `$end` |
+| `$dumpoff` / `$dumpon` | ✅ | `x` for scalars and vectors on `$dumpoff`, current values on `$dumpon` |
+| `$dumpall` | ❌ | |
+| Scalar values `0`, `1`, `x`, `z` | ✅ | case-insensitive input, lowercase output |
+| Vector values `b<bits>` | ✅ | a shorter value is left-extended by the rules of 18.2.1 (`0`, or `x`/`z` of the leftmost bit) |
+| Shortened vector output (leading `0` dropped) | ❌ | vectors are written in full width |
+| Real values `r<number>` | ✅ | 16 significant digits (`%.16g`) |
+| Events | ✅ | every change triggers the event (never deduplicated) |
+| Extended VCD (`$dumpports`, strengths) | ❌ | four-state VCD only |
+
+Extensions beyond the standard:
+
+- `string` variables with `s<text>` values (GTKWave extension), text without whitespace.
+- Value-change deduplication: an unchanged value is not written.
+- All input is validated before any state change: a failed call leaves no trace in the file.
+- Byte-identical output on every platform (LF line endings, deterministic order of scopes and variables).
+
+## Comparison
+
+[pyvcd](https://github.com/SanDisk-Open-Source/pyvcd) is the reference Python writer;
+[cpp-vcd-tracer](https://github.com/nakane1chome/cpp-vcd-tracer) is a standalone C++17 VCD writer for instruction set simulators
+(simulators such as Verilator and SystemC have their own built-in VCD writers, not usable as libraries).
+
+| Feature | vcd-writer | pyvcd 0.5 | cpp-vcd-tracer |
+|---|---|---|---|
+| Language | C++20 | Python ≥ 3.10 | C++17 |
+| Dependencies | none (standard library) | none | none |
+| License | MIT | MIT | BSD-3-Clause |
+| `$date`, `$version`, `$comment` in the header | ✅ | ✅ | `$date` only (fixed `$version`) |
+| `$timescale` | `1`/`10`/`100` × `s`…`fs` | any magnitude × `s`…`zs` | fixed `1ns` |
+| Scope types | 5 standard | 5 standard + SystemVerilog/VHDL ones | `module` only |
+| Variable types | 18 standard + `string` | 18 standard + `string` + SystemVerilog ones | `wire`, `real` |
+| Four-state scalars (`x`, `z`) | ✅ | ✅ | ✅ |
+| Vector values | bit strings | integers, bit strings, tuples (compound vectors) | integers ≤ 64 bits |
+| Real values | ✅ | ✅ | ✅ |
+| String values | ✅ (no whitespace) | ✅ (escaped) | ❌ |
+| Events | ✅ | ✅ | ❌ |
+| `$dumpvars` | ✅ | ✅ | ❌ (initial values at `#0`) |
+| `$dumpoff` / `$dumpon` | ✅ | ✅ | ❌ |
+| `$dumpall` | ❌ | ❌ | ❌ |
+| Aliases (one identifier, several `$var`) | ❌ | ✅ | ❌ |
+| Bit select / range in `$var` | ❌ | ✅ | ❌ |
+| Identifier codes | hexadecimal | base 94 (shortest) | base ~88 |
+| Value-change deduplication | ✅ | ✅ | ✅ |
+| Past timestamp | throws | throws | ignored silently |
+| Input validation | names, sizes, values, date; no trace on failure | values (optional `check_values`) | names are sanitized |
+| Change by scope and name | ✅ | ❌ | ❌ |
+| Output buffering | 64 KiB buffer, no allocation per change | Python file object | `std::ostream` |
+| VCD reader | ❌ | ✅ (tokenizer) | ❌ |
+| GTKWave save files | ❌ | ✅ | ❌ |
 
 ## Requirements
 
