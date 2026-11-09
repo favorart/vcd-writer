@@ -19,7 +19,7 @@ enum class ScopeType : char
 // valid VCD variable types
 enum class VariableType : char
 { wire, reg, string, parameter, integer, real, realtime, time, event,
-  supply0, supply1, tri, triand, trior, trireg, tri0, tri1, wand, wor };
+  supply0, supply1, tri, triand, trior, trireg, tri0, tri1, wand, wor, _count_ };
 // valid timescale numbers
 enum class TimeScale : char
 { one = 1, ten = 10, hundred = 100, _count_ };
@@ -50,7 +50,7 @@ struct TypeException : Exception
 };
 
 // -----------------------------
-class Variable;
+struct Variable;
 using VarPtr = std::shared_ptr<Variable>;
 
 // -----------------------------

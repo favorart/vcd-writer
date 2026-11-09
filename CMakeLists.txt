@@ -55,6 +55,7 @@ endif()
 set(SOURCE_FILES
   "${SRC_PATH}/vcd_writer.cpp"
   "${SRC_PATH}/vcd_header.cpp"
+  "${SRC_PATH}/vcd_variable.cpp"
   "${SRC_PATH}/vcd_utils.cpp"
 )
 
