@@ -55,7 +55,7 @@ using VarPtr = std::shared_ptr<Variable>;
 
 // -----------------------------
 struct Header;
-struct HeaderDeleter { void operator()(Header *p); };
+struct HeaderDeleter { void operator()(Header *p) const; };
 using HeadPtr = std::unique_ptr<Header, HeaderDeleter>;
 
 // -----------------------------
