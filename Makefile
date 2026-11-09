@@ -78,19 +78,6 @@ $(BUILD_PATH)/test: $(OBJECTS)
 	@echo "Building exe file for unit tests: $@"
 	${CXX} $(CXXFLAGS) test/vcd_tests.cpp $(INCLUDES) -o $@ $^  $(LDFLAGS)
 
-# Python module (needs the Python headers, e.g. python3-dev):
-#   make python && PYTHONPATH=build python3 -m unittest discover -s python
-PYTHON_CONFIG ?= python3-config
-
-.PHONY: python
-python: export CXXFLAGS := $(CXXFLAGS) $(COMPILE_FLAGS)
-python: dirs
-	@$(MAKE) $(BUILD_PATH)/vcdwriter$(shell $(PYTHON_CONFIG) --extension-suffix)
-
-$(BUILD_PATH)/vcdwriter%: python/vcd_python.cpp $(OBJECTS)
-	@echo "Building Python module: $@"
-	${CXX} $(CXXFLAGS) $(INCLUDES) -I $(SRC_PATH) $(shell $(PYTHON_CONFIG) --includes) -shared -o $@ $^
-
 # Add dependency files, if they exist
 -include $(DEPS)
 

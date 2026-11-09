@@ -21,13 +21,14 @@ RUNS = 5
 DATE = "2026-01-01 00:00:00"
 
 
-def write(writer, vec_values, sc_values):
-    """Register the variables, change them on every step, close the writer."""
+def write(writer, types, vec_values, sc_values):
+    """Register the variables (*types*: wire, integer of the writer), change them on every step, close the writer."""
+    wire, integer = types
     vec, sc = [], []
     for i in range(VARS):
         scope = "top.m" + str(i % 50)
-        vec.append(writer.register_var(scope, "v" + str(i), "wire", WIDTH))
-        sc.append(writer.register_var(scope, "s" + str(i), "integer", 1))  # a scalar in both
+        vec.append(writer.register_var(scope, "v" + str(i), wire, WIDTH))
+        sc.append(writer.register_var(scope, "s" + str(i), integer, 1))  # a scalar in both
     change = writer.change
     pairs = list(zip(vec, sc))
     for t in range(STEPS):
@@ -38,11 +39,11 @@ def write(writer, vec_values, sc_values):
     writer.close()
 
 
-def best_of(make_writer, vec_values, sc_values):
+def best_of(make_writer, types, vec_values, sc_values):
     best = float("inf")
     for _ in range(RUNS):
         t0 = time.perf_counter()
-        write(make_writer(), vec_values, sc_values)
+        write(make_writer(), types, vec_values, sc_values)
         best = min(best, time.perf_counter() - t0)
     return best
 
@@ -54,7 +55,7 @@ def main():
     streams = []
 
     def ours():
-        return vcdwriter.Writer(ours_file, timescale="1 ns", date=DATE)
+        return vcdwriter.Writer(ours_file, date=DATE)
 
     def pyvcd():
         if streams:
@@ -62,17 +63,17 @@ def main():
         streams.append(open(pyvcd_file, "w", newline="\n"))
         return vcd.VCDWriter(streams[-1], timescale="1 ns", date=DATE)
 
-    ints = [(t * 2654435761) & 0xFFFFFFFF for t in range(STEPS)]
-    bits = [format(v, "032b") for v in ints]
+    # the values are VCD strings: vcdwriter takes str only
+    bits = [format((t * 2654435761) & 0xFFFFFFFF, "032b") for t in range(STEPS)]
     changed = [[(t + i) % STEPS for i in range(VARS)] for t in range(STEPS)]
     scenarios = [
-        ("int values, all changed",
-         [[ints[k] for k in row] for row in changed], [[k & 1 for k in row] for row in changed]),
         ("str values, all changed",
          [[bits[k] for k in row] for row in changed], [["01"[k & 1] for k in row] for row in changed]),
-        ("int values, unchanged",
-         [[ints[i % STEPS] for i in range(VARS)]] * STEPS, [[i & 1 for i in range(VARS)]] * STEPS),
+        ("str values, unchanged",
+         [[bits[i % STEPS] for i in range(VARS)]] * STEPS, [["01"[i & 1] for i in range(VARS)]] * STEPS),
     ]
+    ours_types = (vcdwriter.VariableType.wire, vcdwriter.VariableType.integer)
+    pyvcd_types = ("wire", "integer")
 
     ops = 2 * VARS * STEPS
     print(f"Python {sys.version.split()[0]}, pyvcd {version('pyvcd')}: "
@@ -80,8 +81,8 @@ def main():
     print(f"| {'scenario':26} | {'pyvcd':>11} | {'vcdwriter':>11} | {'speedup':>7} |")
     print(f"|{'-' * 28}|{'-' * 12}:|{'-' * 12}:|{'-' * 8}:|")
     for name, vec_values, sc_values in scenarios:
-        t_pyvcd = best_of(pyvcd, vec_values, sc_values)
-        t_ours = best_of(ours, vec_values, sc_values)
+        t_pyvcd = best_of(pyvcd, pyvcd_types, vec_values, sc_values)
+        t_ours = best_of(ours, ours_types, vec_values, sc_values)
         print(f"| {name:26} | {t_pyvcd * 1e9 / ops:8.0f} ns | {t_ours * 1e9 / ops:8.0f} ns | {t_pyvcd / t_ours:6.1f}x |")
     for f in streams:
         f.close()

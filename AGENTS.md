@@ -9,6 +9,7 @@ Rules for any change to vcd-writer, a C++20 library that writes Value Change Dum
 - Compiler-specific flags live in CMake only.
 - The standard library instead of third-party dependencies.
 - GoogleTest is used by the tests only.
+- nanobind is used by the Python module only.
 - Character checks are ASCII (no `std::tolower` / `std::isgraph`): VCD identifiers are printable ASCII.
 - Character checks do not depend on the locale set by the host application.
 

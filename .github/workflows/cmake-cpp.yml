@@ -45,6 +45,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.x'
+    - name: Install nanobind
+      run: python -m pip install nanobind
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs.

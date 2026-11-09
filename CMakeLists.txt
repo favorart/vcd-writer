@@ -6,7 +6,7 @@ option(VCDWRITER_BUILD_MAIN "Build the main executable" ON)
 option(VCDWRITER_BUILD_TESTS "Build unit tests" ON)
 option(VCDWRITER_BUILD_BENCH "Build the benchmark" OFF)
 option(VCDWRITER_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer (GCC/Clang)" OFF)
-option(VCDWRITER_BUILD_PYTHON "Build the Python module (CPython C API, no dependencies)" OFF)
+option(VCDWRITER_BUILD_PYTHON "Build the Python module (nanobind)" OFF)
 
 # C++ settings: std::format requires C++20
 set(CMAKE_CXX_STANDARD 20)
@@ -112,9 +112,13 @@ endif()
 # Python module `vcdwriter` (optional)
 if (VCDWRITER_BUILD_PYTHON)
   find_package(Python 3.8 REQUIRED COMPONENTS Interpreter Development.Module)
-  Python_add_library(vcdwriter_python MODULE WITH_SOABI "${CMAKE_CURRENT_SOURCE_DIR}/python/vcd_python.cpp")
+  # nanobind is a build dependency of the Python module only (pip install nanobind)
+  execute_process(COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+                  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
+  find_package(nanobind CONFIG REQUIRED)
+  nanobind_add_module(vcdwriter_python "${CMAKE_CURRENT_SOURCE_DIR}/python/vcd_python.cpp")
   set_target_properties(vcdwriter_python PROPERTIES OUTPUT_NAME vcdwriter)
-  # the module uses the internal Variable to convert the Python values
+  # the module exposes the fields of the internal Variable
   target_include_directories(vcdwriter_python PRIVATE ${SRC_PATH})
   target_link_libraries(vcdwriter_python PRIVATE vcdwriter_static)
   vcdwriter_setup_target(vcdwriter_python)

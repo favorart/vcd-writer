@@ -94,40 +94,35 @@ cmake --build build --config Release
 
 ## Python
 
-The `vcdwriter` module is written with the CPython C API only (no pybind11 or other dependencies), Python 3.8+.
-Its API follows [pyvcd](https://github.com/SanDisk-Open-Source/pyvcd)'s `VCDWriter` for the features both have,
-but it takes a file path instead of a file object.
+The `vcdwriter` module is a thin [nanobind](https://github.com/wjakob/nanobind) wrapper of the C++ API: the same classes, methods, enumerations and values. Python 3.8+.
 
 ```
 pip install git+https://github.com/favorart/vcd-writer
 ```
 
-or build it with CMake (`-DVCDWRITER_BUILD_PYTHON=ON`, ctest runs its tests) or with `make python`.
+or build it with CMake (`pip install nanobind`, then `-DVCDWRITER_BUILD_PYTHON=ON`; ctest runs its tests).
 
 ```python
-import vcdwriter
+from vcdwriter import Writer, VariableType
 
-with vcdwriter.Writer("dump.vcd", timescale="1 ns") as writer:
-    counter = writer.register_var("a.b.c", "counter", "integer", 8)
-    clk = writer.register_var("a.b", "clk", "integer", 1)
+with Writer("dump.vcd") as writer:
+    counter = writer.register_var("a.b.c", "counter", VariableType.integer, 8)
+    clk = writer.register_var("a.b", "clk", VariableType.integer, 1)
     for timestamp in range(5):
-        writer.change(counter, timestamp, 10 + timestamp * 2)  # int, bool, float, str ("1x0z") or None ("z")
-        writer.change(clk, timestamp, timestamp % 2 == 0)
+        writer.change(counter, timestamp, format(10 + timestamp * 2, "b"))  # VCD strings, as in C++
+        writer.change(clk, timestamp, "1" if timestamp % 2 == 0 else "0")
 ```
 
-Errors are `vcdwriter.VCDPhaseError` (call order) and `vcdwriter.VCDTypeError` (invalid argument, also a `ValueError`),
-both derived from `vcdwriter.VCDError`.
+Errors are `vcdwriter.VCDPhaseError` (call order) and `vcdwriter.VCDTypeError` (invalid value), both derived from `vcdwriter.VCDError`.
 
-Speed against pyvcd (`python bench/vcd_bench.py`: 1000 vectors of 32 bits and 1000 scalars change
-on each of 200 timestamps, time per change including the Python loop):
+Speed against pyvcd (`python bench/vcd_bench.py`: 1000 vectors of 32 bits and 1000 scalars change on each of 200 timestamps, time per change including the Python loop):
 
 | Scenario | pyvcd 0.5.1 | vcdwriter | Speedup |
 |---|---:|---:|---:|
-| int values, all changed | 1196 ns | 295 ns | 4.1× |
-| str values, all changed | 2259 ns | 298 ns | 7.6× |
-| int values, unchanged (deduplicated) | 489 ns | 200 ns | 2.4× |
+| str values, all changed | 2130 ns | 360 ns | 5.9× |
+| str values, unchanged (deduplicated) | 340 ns | 300 ns | 1.1× |
 
-Linux (WSL2), Python 3.10, Clang 18 / libc++.
+Linux, Python 3.12, GCC 13.
 
 ## Quick Start
 

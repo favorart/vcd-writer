@@ -1,6 +1,6 @@
 # Python module `vcdwriter`: pip install .  (or git+https://github.com/favorart/vcd-writer)
 [build-system]
-requires = ["scikit-build-core>=0.10", "setuptools-scm>=8"]
+requires = ["scikit-build-core>=0.10", "setuptools-scm>=8", "nanobind>=2.0"]
 build-backend = "scikit_build_core.build"
 
 [project]

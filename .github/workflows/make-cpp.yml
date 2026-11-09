@@ -34,11 +34,3 @@ jobs:
       run: ./build/main && diff compare.vcd dump.vcd
     - name: unit tests
       run: ./build/test
-
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-    - name: Python module
-      run: make python
-    - name: Python tests
-      run: PYTHONPATH=build python -m unittest discover -s python -p "test_*.py" -v
