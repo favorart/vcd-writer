@@ -161,6 +161,38 @@ cmake --build build --config Release
 ./build/vcd_bench
 ```
 
+## Python
+
+The `vcdwriter` module is a thin [nanobind](https://github.com/wjakob/nanobind) wrapper of the C++ API: the same classes, methods, enumerations and values. Python 3.8+.
+
+```
+pip install git+https://github.com/favorart/vcd-writer
+```
+
+or build it with CMake (`pip install nanobind`, then `-DVCDWRITER_BUILD_PYTHON=ON`; ctest runs its tests).
+
+```python
+from vcdwriter import Writer, VariableType
+
+with Writer("dump.vcd") as writer:
+    counter = writer.register_var("a.b.c", "counter", VariableType.integer, 8)
+    clk = writer.register_var("a.b", "clk", VariableType.integer, 1)
+    for timestamp in range(5):
+        writer.change(counter, timestamp, format(10 + timestamp * 2, "b"))  # VCD strings, as in C++
+        writer.change(clk, timestamp, "1" if timestamp % 2 == 0 else "0")
+```
+
+Errors are `vcdwriter.VCDPhaseError` (call order) and `vcdwriter.VCDTypeError` (invalid value), both derived from `vcdwriter.VCDError`.
+
+Speed against pyvcd (`python bench/vcd_bench.py`: 1000 vectors of 32 bits and 1000 scalars change on each of 200 timestamps, time per change including the Python loop):
+
+| Scenario | pyvcd 0.5.1 | vcdwriter | Speedup |
+|---|---:|---:|---:|
+| str values, all changed | 2130 ns | 360 ns | 5.9× |
+| str values, unchanged (deduplicated) | 340 ns | 300 ns | 1.1× |
+
+Linux, Python 3.12, GCC 13.
+
 ## Quick Start
 
 ```C++

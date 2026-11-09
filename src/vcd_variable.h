@@ -1,12 +1,13 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "vcd_writer.h"
 
 namespace vcd {
 // A registered variable: its declaration and the rules of its values
-struct Variable
+struct Variable : std::enable_shared_from_this<Variable>  // Python bindings reuse the owning shared_ptr
 {
     // how the values are written
     enum class Kind { scalar, vector, real, string, event };
