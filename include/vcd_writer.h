@@ -10,7 +10,6 @@ namespace vcd {
 namespace utils {
 // -----------------------------
 std::string now();
-bool validate_date(const std::string&);
 }
 
 // -----------------------------
