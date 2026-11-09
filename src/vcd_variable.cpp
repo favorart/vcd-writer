@@ -28,6 +28,8 @@ constexpr char RECORD_SUFFIX = ' ';
 // *size* or the default size of *type*
 unsigned size_of(VariableType type, unsigned size, const std::string &name)
 {
+    if (type < VariableType::wire || type >= VariableType::_count_) // a C caller can pass any number
+        throw TypeException{ std::format("Invalid type {} of var '{}'", int(type), name) };
     switch (type)
     {
     case VariableType::integer:
