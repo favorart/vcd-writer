@@ -1,5 +1,6 @@
 #include <fstream>
 #include <vcd_writer.h>
+#include <vcd_writer_c.h>
 #include <gtest/gtest.h>
 
 using namespace vcd;
@@ -967,6 +968,97 @@ TEST_F(WriterFixture, NonAsciiValues)
     EXPECT_THROW(writer->change(str, 1, "\xC3\xA9"), TypeException);
     EXPECT_THROW(writer->change(vec, 1, "\xD8" "1"), TypeException);
     EXPECT_TRUE(writer->change(vec, 1, "XZ"));
+}
+
+// Regression: out-of-range enumeration values indexed the name tables out of range
+TEST_F(WriterFixture, InvalidEnumValues)
+{
+    EXPECT_THROW(writer->register_var(scope, name, VariableType::_count_, size), TypeException);
+    EXPECT_THROW(writer->register_var(scope, name, VariableType(-1), size), TypeException);
+    writer->register_var(scope, name, VariableType::wire, size);
+    EXPECT_THROW(writer->set_scope_type(scope, ScopeType::_count_), TypeException);
+    EXPECT_THROW(writer->set_scope_default_type(ScopeType(-1)), TypeException);
+}
+
+// -----------------------------
+
+// Errors of the C interface are statuses with a message
+TEST(CApiTest, Statuses)
+{
+    const std::string filename = test_filename();
+    vcd_writer *writer = nullptr;
+    vcd_var *var = nullptr;
+    int changed = -1;
+
+    EXPECT_EQ(vcd_open(&writer, filename.c_str(), vcd_timescale(5), vcd_unit_ns, nullptr, nullptr, nullptr, 0), vcd_error_type);
+    EXPECT_EQ(writer, nullptr);
+    EXPECT_STRNE(vcd_last_error(), "");
+    EXPECT_EQ(vcd_open(&writer, "no_such_dir/c.vcd", vcd_timescale_one, vcd_unit_ns, nullptr, nullptr, nullptr, 0), vcd_error);
+    ASSERT_EQ(vcd_open(&writer, filename.c_str(), vcd_timescale_one, vcd_unit_ns, "", nullptr, nullptr, 0), vcd_ok);
+    EXPECT_STREQ(vcd_last_error(), "");
+
+    EXPECT_EQ(vcd_register_var(writer, "s", "bad name", vcd_var_wire, 1, nullptr, &var), vcd_error_type);
+    EXPECT_EQ(var, nullptr);
+    EXPECT_EQ(vcd_register_var(writer, "s", "v", vcd_var_count_, 1, nullptr, &var), vcd_error_type);
+    ASSERT_EQ(vcd_register_var(writer, "s", "v", vcd_var_wire, 4, "1010", &var), vcd_ok);
+    EXPECT_EQ(vcd_set_scope_type(writer, "none", vcd_scope_task), vcd_error_phase);
+    EXPECT_EQ(vcd_set_scope_type(writer, "s", vcd_scope_count_), vcd_error_type);
+
+    EXPECT_EQ(vcd_change(writer, var, 1, "10a0", nullptr), vcd_error_type);
+    EXPECT_EQ(vcd_change(writer, nullptr, 1, "1", nullptr), vcd_error_type);
+    EXPECT_EQ(vcd_change(writer, var, 1, "0101", &changed), vcd_ok);
+    EXPECT_EQ(changed, 1);
+    EXPECT_EQ(vcd_change_by_name(writer, "s", "v", 2, "0101", &changed), vcd_ok);
+    EXPECT_EQ(changed, 0);
+    EXPECT_EQ(vcd_change(writer, var, 0, "1111", nullptr), vcd_error_phase);
+    EXPECT_EQ(vcd_change_by_name(writer, "s", "none", 2, "1", nullptr), vcd_error_phase);
+    EXPECT_EQ(vcd_register_var(writer, "s", "w", vcd_var_wire, 1, nullptr, &var), vcd_error_phase);
+    EXPECT_EQ(vcd_close(writer, nullptr), vcd_ok);
+    EXPECT_EQ(vcd_close(nullptr, nullptr), vcd_ok);
+}
+
+// The C interface writes the same as the C++ one
+TEST(CApiTest, Output)
+{
+    const std::string filename = test_filename();
+    vcd_writer *writer = nullptr;
+    vcd_var *var = nullptr;
+    const uint64_t end = 6;
+
+    ASSERT_EQ(vcd_open(&writer, filename.c_str(), vcd_timescale_ten, vcd_unit_us, "", "c", "v", 1), vcd_ok);
+    ASSERT_EQ(vcd_set_scope_sep(writer, "/"), vcd_ok);
+    ASSERT_EQ(vcd_set_scope_default_type(writer, vcd_scope_task), vcd_ok);
+    ASSERT_EQ(vcd_register_var(writer, "a/b", "v", vcd_var_wire, 1, "0", &var), vcd_ok);
+    ASSERT_EQ(vcd_set_scope_type(writer, "a/b", vcd_scope_fork), vcd_ok);
+    ASSERT_EQ(vcd_change(writer, var, 2, "1", nullptr), vcd_ok);
+    ASSERT_EQ(vcd_dump_off(writer, 3), vcd_ok);
+    ASSERT_EQ(vcd_dump_on(writer, 4), vcd_ok);
+    ASSERT_EQ(vcd_flush(writer, nullptr), vcd_ok);
+    ASSERT_EQ(vcd_close(writer, &end), vcd_ok);
+    EXPECT_EQ(read_file(filename), "$timescale 10 us $end\n"
+                                   "$comment c $end\n"
+                                   "$version v $end\n"
+                                   "$scope task a $end\n"
+                                   "$scope fork b $end\n"
+                                   "$var wire 1 0 v $end\n"
+                                   "$upscope $end\n"
+                                   "$upscope $end\n"
+                                   "$enddefinitions $end\n"
+                                   "#1\n"
+                                   "$dumpvars\n"
+                                   "b0 0\n"
+                                   "$end\n"
+                                   "#2\n"
+                                   "b1 0\n"
+                                   "#3\n"
+                                   "$dumpoff\n"
+                                   "bx 0\n"
+                                   "$end\n"
+                                   "#4\n"
+                                   "$dumpon\n"
+                                   "b1 0\n"
+                                   "$end\n"
+                                   "#6\n");
 }
 
 // -----------------------------
